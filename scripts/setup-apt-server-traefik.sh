@@ -326,8 +326,9 @@ setup_fancyindex_theme() {
     THEME_DIR=""
     
     for path in "$SCRIPT_DIR/../templates/fancyindex" "$SCRIPT_DIR/templates/fancyindex" "/opt/vaultctl/templates/fancyindex"; do
-        if [[ -d "$path" ]]; then
-            THEME_DIR="$path"
+        resolved_path="$(realpath "$path" 2>/dev/null || echo "")"
+        if [[ -n "$resolved_path" ]] && [[ -d "$resolved_path" ]]; then
+            THEME_DIR="$resolved_path"
             break
         fi
     done
@@ -335,6 +336,7 @@ setup_fancyindex_theme() {
     if [[ -n "$THEME_DIR" ]] && [[ -f "$THEME_DIR/header.html" ]]; then
         cp "$THEME_DIR/header.html" "$REPO_DIR/.theme/"
         cp "$THEME_DIR/footer.html" "$REPO_DIR/.theme/"
+        print_step "테마 사용: $THEME_DIR"
     else
         # 템플릿이 없으면 인라인으로 생성
         cat > "$REPO_DIR/.theme/header.html" << 'HEADEREOF'
@@ -930,13 +932,20 @@ CLIENTEOF
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     TEMPLATE_FILE=""
     
-    # 템플릿 파일 찾기
+    # 템플릿 파일 찾기 (realpath로 경로 정규화)
     for path in "$SCRIPT_DIR/../templates/index.html" "$SCRIPT_DIR/templates/index.html" "/opt/vaultctl/templates/index.html"; do
-        if [[ -f "$path" ]]; then
-            TEMPLATE_FILE="$path"
+        resolved_path="$(realpath "$path" 2>/dev/null || echo "")"
+        if [[ -n "$resolved_path" ]] && [[ -f "$resolved_path" ]]; then
+            TEMPLATE_FILE="$resolved_path"
+            print_step "템플릿 사용: $TEMPLATE_FILE"
             break
         fi
     done
+    
+    if [[ -z "$TEMPLATE_FILE" ]]; then
+        print_warning "템플릿 파일을 찾을 수 없음, 내장 HTML 사용"
+        print_warning "SCRIPT_DIR: $SCRIPT_DIR"
+    fi
     
     # Public/Private에 따른 플레이스홀더 값 설정
     if [[ "$ENABLE_AUTH" == "true" ]]; then
@@ -980,7 +989,7 @@ sudo chmod 600 /etc/apt/auth.conf.d/internal.conf
             sed -i 's|__AUTH_SECTION__||g' "$REPO_DIR/index.html"
         fi
     else
-        # 템플릿이 없으면 기본 HTML 생성 (영문)
+        # 템플릿이 없으면 기본 HTML 생성 (shadcn/ui 스타일)
         if [[ "$ENABLE_AUTH" == "true" ]]; then
             cat > "$REPO_DIR/index.html" << 'HTMLEOF'
 <!DOCTYPE html>
@@ -990,44 +999,78 @@ sudo chmod 600 /etc/apt/auth.conf.d/internal.conf
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>APT Repository</title>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 40px; background: #f5f5f5; }
-        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        h1 { color: #333; border-bottom: 2px solid #667eea; padding-bottom: 10px; }
-        h2 { color: #555; margin-top: 30px; }
-        a { color: #667eea; }
-        code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; }
-        pre { background: #1e1e2e; color: #cdd6f4; padding: 15px; border-radius: 8px; overflow-x: auto; }
-        .info { background: #e0e7ff; border-left: 4px solid #667eea; padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 20px 0; }
-        .badge { display: inline-block; background: #10b981; color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; margin-left: 8px; }
+        :root{--background:#fff;--foreground:#0a0a0a;--card:#fff;--muted:#f4f4f5;--muted-foreground:#71717a;--border:#e4e4e7;--radius:0.5rem}
+        *{box-sizing:border-box;margin:0;padding:0}
+        body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--background);color:var(--foreground);line-height:1.5;-webkit-font-smoothing:antialiased}
+        .container{max-width:800px;margin:0 auto;padding:48px 24px}
+        .header{margin-bottom:32px}
+        .header h1{font-size:30px;font-weight:700;letter-spacing:-0.025em;margin-bottom:8px}
+        .header p{color:var(--muted-foreground);font-size:14px}
+        .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:24px;margin-bottom:24px}
+        .card-header{margin-bottom:16px}
+        .card-title{font-size:18px;font-weight:600}
+        .card-description{font-size:14px;color:var(--muted-foreground);margin-top:4px}
+        .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 16px;font-size:14px;font-weight:500;border-radius:var(--radius);border:1px solid var(--border);background:var(--background);color:var(--foreground);text-decoration:none;transition:background .15s,border-color .15s}
+        .btn:hover{background:var(--muted);border-color:var(--foreground)}
+        .btn-group{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:32px}
+        .code-block{background:var(--foreground);color:#fafafa;border-radius:var(--radius);padding:16px 20px;overflow-x:auto;font-family:ui-monospace,'SF Mono',Consolas,monospace;font-size:13px;line-height:1.7}
+        .code-block .c{color:#71717a}
+        code{background:var(--muted);padding:2px 6px;border-radius:4px;font-family:ui-monospace,'SF Mono',Consolas,monospace;font-size:13px}
+        .info-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:24px}
+        .info-item{padding:16px;background:var(--muted);border-radius:var(--radius)}
+        .info-item dt{font-size:12px;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px}
+        .info-item dd{font-size:14px;font-weight:500;font-family:ui-monospace,'SF Mono',Consolas,monospace}
+        .separator{height:1px;background:var(--border);margin:32px 0}
+        .footer{text-align:center;font-size:12px;color:var(--muted-foreground)}
+        @media(max-width:640px){.info-grid{grid-template-columns:1fr}}
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Internal APT Repository <span class="badge">Private</span></h1>
-        <p><a href="/key.gpg">GPG Key</a> | <a href="/setup-client.sh">Setup Script</a></p>
-        <div class="info">
-            <strong>Domain:</strong> DOMAIN_PLACEHOLDER<br>
-            <strong>Codename:</strong> CODENAME_PLACEHOLDER
+        <div class="header">
+            <h1>APT Repository</h1>
+            <p>Internal package distribution server</p>
         </div>
-        <h2>Quick Setup</h2>
-        <pre>curl -fsSL https://DOMAIN_PLACEHOLDER/setup-client.sh | sudo bash -s -- USER PASSWORD</pre>
-        <h2>Manual Setup</h2>
-        <pre># 1. Add GPG key
+        <div class="info-grid">
+            <dl class="info-item"><dt>Domain</dt><dd>DOMAIN_PLACEHOLDER</dd></dl>
+            <dl class="info-item"><dt>Codename</dt><dd>CODENAME_PLACEHOLDER</dd></dl>
+            <dl class="info-item"><dt>Architecture</dt><dd>amd64</dd></dl>
+        </div>
+        <div class="btn-group">
+            <a href="/key.gpg" class="btn">GPG Key</a>
+            <a href="/setup-client.sh" class="btn">Setup Script</a>
+        </div>
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Quick Setup</h2>
+                <p class="card-description">One command to configure everything</p>
+            </div>
+            <div class="code-block">curl -fsSL https://DOMAIN_PLACEHOLDER/setup-client.sh | sudo bash -s -- USER PASSWORD</div>
+        </div>
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Manual Setup</h2>
+                <p class="card-description">Step by step installation</p>
+            </div>
+            <div class="code-block"><span class="c"># Add GPG key</span>
 curl -fsSL -u USER:PASS https://DOMAIN_PLACEHOLDER/key.gpg | \
     sudo gpg --dearmor -o /usr/share/keyrings/internal-apt.gpg
 
-# 2. Configure auth
+<span class="c"># Configure auth</span>
 echo "machine DOMAIN_PLACEHOLDER login USER password PASS" | \
     sudo tee /etc/apt/auth.conf.d/internal.conf
 sudo chmod 600 /etc/apt/auth.conf.d/internal.conf
 
-# 3. Add APT source
+<span class="c"># Add APT source</span>
 echo "deb [signed-by=/usr/share/keyrings/internal-apt.gpg] https://DOMAIN_PLACEHOLDER CODENAME_PLACEHOLDER main" | \
     sudo tee /etc/apt/sources.list.d/internal.list
 
-# 4. Install
+<span class="c"># Install</span>
 sudo apt update
-sudo apt install vaultctl</pre>
+sudo apt install vaultctl</div>
+        </div>
+        <div class="separator"></div>
+        <div class="footer">Powered by reprepro + GPG signing</div>
     </div>
 </body>
 </html>
@@ -1041,39 +1084,73 @@ HTMLEOF
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>APT Repository</title>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 40px; background: #f5f5f5; }
-        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        h1 { color: #333; border-bottom: 2px solid #667eea; padding-bottom: 10px; }
-        h2 { color: #555; margin-top: 30px; }
-        a { color: #667eea; }
-        code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; }
-        pre { background: #1e1e2e; color: #cdd6f4; padding: 15px; border-radius: 8px; overflow-x: auto; }
-        .info { background: #e0e7ff; border-left: 4px solid #667eea; padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 20px 0; }
-        .badge { display: inline-block; background: #3b82f6; color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; margin-left: 8px; }
+        :root{--background:#fff;--foreground:#0a0a0a;--card:#fff;--muted:#f4f4f5;--muted-foreground:#71717a;--border:#e4e4e7;--radius:0.5rem}
+        *{box-sizing:border-box;margin:0;padding:0}
+        body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--background);color:var(--foreground);line-height:1.5;-webkit-font-smoothing:antialiased}
+        .container{max-width:800px;margin:0 auto;padding:48px 24px}
+        .header{margin-bottom:32px}
+        .header h1{font-size:30px;font-weight:700;letter-spacing:-0.025em;margin-bottom:8px}
+        .header p{color:var(--muted-foreground);font-size:14px}
+        .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:24px;margin-bottom:24px}
+        .card-header{margin-bottom:16px}
+        .card-title{font-size:18px;font-weight:600}
+        .card-description{font-size:14px;color:var(--muted-foreground);margin-top:4px}
+        .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 16px;font-size:14px;font-weight:500;border-radius:var(--radius);border:1px solid var(--border);background:var(--background);color:var(--foreground);text-decoration:none;transition:background .15s,border-color .15s}
+        .btn:hover{background:var(--muted);border-color:var(--foreground)}
+        .btn-group{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:32px}
+        .code-block{background:var(--foreground);color:#fafafa;border-radius:var(--radius);padding:16px 20px;overflow-x:auto;font-family:ui-monospace,'SF Mono',Consolas,monospace;font-size:13px;line-height:1.7}
+        .code-block .c{color:#71717a}
+        code{background:var(--muted);padding:2px 6px;border-radius:4px;font-family:ui-monospace,'SF Mono',Consolas,monospace;font-size:13px}
+        .info-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:24px}
+        .info-item{padding:16px;background:var(--muted);border-radius:var(--radius)}
+        .info-item dt{font-size:12px;color:var(--muted-foreground);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px}
+        .info-item dd{font-size:14px;font-weight:500;font-family:ui-monospace,'SF Mono',Consolas,monospace}
+        .separator{height:1px;background:var(--border);margin:32px 0}
+        .footer{text-align:center;font-size:12px;color:var(--muted-foreground)}
+        @media(max-width:640px){.info-grid{grid-template-columns:1fr}}
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Internal APT Repository <span class="badge">Public</span></h1>
-        <p><a href="/key.gpg">GPG Key</a> | <a href="/setup-client.sh">Setup Script</a></p>
-        <div class="info">
-            <strong>Domain:</strong> DOMAIN_PLACEHOLDER<br>
-            <strong>Codename:</strong> CODENAME_PLACEHOLDER
+        <div class="header">
+            <h1>APT Repository</h1>
+            <p>Internal package distribution server</p>
         </div>
-        <h2>Quick Setup</h2>
-        <pre>curl -fsSL https://DOMAIN_PLACEHOLDER/setup-client.sh | sudo bash</pre>
-        <h2>Manual Setup</h2>
-        <pre># 1. Add GPG key
+        <div class="info-grid">
+            <dl class="info-item"><dt>Domain</dt><dd>DOMAIN_PLACEHOLDER</dd></dl>
+            <dl class="info-item"><dt>Codename</dt><dd>CODENAME_PLACEHOLDER</dd></dl>
+            <dl class="info-item"><dt>Architecture</dt><dd>amd64</dd></dl>
+        </div>
+        <div class="btn-group">
+            <a href="/key.gpg" class="btn">GPG Key</a>
+            <a href="/setup-client.sh" class="btn">Setup Script</a>
+        </div>
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Quick Setup</h2>
+                <p class="card-description">One command to configure everything</p>
+            </div>
+            <div class="code-block">curl -fsSL https://DOMAIN_PLACEHOLDER/setup-client.sh | sudo bash</div>
+        </div>
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Manual Setup</h2>
+                <p class="card-description">Step by step installation</p>
+            </div>
+            <div class="code-block"><span class="c"># Add GPG key</span>
 curl -fsSL https://DOMAIN_PLACEHOLDER/key.gpg | \
     sudo gpg --dearmor -o /usr/share/keyrings/internal-apt.gpg
 
-# 2. Add APT source
+<span class="c"># Add APT source</span>
 echo "deb [signed-by=/usr/share/keyrings/internal-apt.gpg] https://DOMAIN_PLACEHOLDER CODENAME_PLACEHOLDER main" | \
     sudo tee /etc/apt/sources.list.d/internal.list
 
-# 3. Install
+<span class="c"># Install</span>
 sudo apt update
-sudo apt install vaultctl</pre>
+sudo apt install vaultctl</div>
+        </div>
+        <div class="separator"></div>
+        <div class="footer">Powered by reprepro + GPG signing</div>
     </div>
 </body>
 </html>
