@@ -859,18 +859,21 @@ create_client_scripts() {
     print_header "클라이언트 스크립트"
     
     print_step "setup-client.sh 생성..."
-    cat > "$REPO_DIR/setup-client.sh" << CLIENTEOF
+    
+    if [[ "$ENABLE_AUTH" == "true" ]]; then
+        # Private 모드: 인증 지원
+        cat > "$REPO_DIR/setup-client.sh" << CLIENTEOF
 #!/bin/bash
 set -e
 
 DOMAIN="$DOMAIN"
-AUTH_USER="\${1:-}"
-AUTH_PASS="\${2:-}"
+AUTH_USER="\${1:?Usage: \$0 USERNAME PASSWORD}"
+AUTH_PASS="\${2:?Usage: \$0 USERNAME PASSWORD}"
 CODENAME="$REPO_CODENAME"
 
 echo ""
 echo "============================================================"
-echo "  APT Repository Client Setup"
+echo "  APT Repository Client Setup (Private)"
 echo "============================================================"
 echo ""
 echo "  Domain:   \$DOMAIN"
@@ -880,29 +883,20 @@ echo ""
 # 1. Add GPG key
 echo "[1/4] Adding GPG key..."
 rm -f /usr/share/keyrings/internal-apt.gpg
-if [[ -n "\$AUTH_USER" ]]; then
-    curl -fsSL -u "\$AUTH_USER:\$AUTH_PASS" "https://\$DOMAIN/key.gpg" | \\
-        gpg --dearmor -o /usr/share/keyrings/internal-apt.gpg
-else
-    curl -fsSL "https://\$DOMAIN/key.gpg" | \\
-        gpg --dearmor -o /usr/share/keyrings/internal-apt.gpg
-fi
+curl -fsSL -u "\$AUTH_USER:\$AUTH_PASS" "https://\$DOMAIN/key.gpg" | \\
+    gpg --dearmor -o /usr/share/keyrings/internal-apt.gpg
 echo "      Done"
 
 # 2. Configure authentication
-if [[ -n "\$AUTH_USER" ]]; then
-    echo "[2/4] Configuring authentication..."
-    mkdir -p /etc/apt/auth.conf.d
-    cat > /etc/apt/auth.conf.d/internal.conf << AUTHEOF
+echo "[2/4] Configuring authentication..."
+mkdir -p /etc/apt/auth.conf.d
+cat > /etc/apt/auth.conf.d/internal.conf << AUTHEOF
 machine \$DOMAIN
 login \$AUTH_USER
 password \$AUTH_PASS
 AUTHEOF
-    chmod 600 /etc/apt/auth.conf.d/internal.conf
-    echo "      Done"
-else
-    echo "[2/4] Skipping authentication (public repo)"
-fi
+chmod 600 /etc/apt/auth.conf.d/internal.conf
+echo "      Done"
 
 # 3. Add APT source
 echo "[3/4] Adding APT source..."
@@ -924,6 +918,52 @@ echo "  Install packages with:"
 echo "    sudo apt install vaultctl"
 echo ""
 CLIENTEOF
+    else
+        # Public 모드: 인증 없음
+        cat > "$REPO_DIR/setup-client.sh" << CLIENTEOF
+#!/bin/bash
+set -e
+
+DOMAIN="$DOMAIN"
+CODENAME="$REPO_CODENAME"
+
+echo ""
+echo "============================================================"
+echo "  APT Repository Client Setup"
+echo "============================================================"
+echo ""
+echo "  Domain:   \$DOMAIN"
+echo "  Codename: \$CODENAME"
+echo ""
+
+# 1. Add GPG key
+echo "[1/3] Adding GPG key..."
+rm -f /usr/share/keyrings/internal-apt.gpg
+curl -fsSL "https://\$DOMAIN/key.gpg" | \\
+    gpg --dearmor -o /usr/share/keyrings/internal-apt.gpg
+echo "      Done"
+
+# 2. Add APT source
+echo "[2/3] Adding APT source..."
+cat > /etc/apt/sources.list.d/internal.list << SRCEOF
+deb [signed-by=/usr/share/keyrings/internal-apt.gpg] https://\$DOMAIN \$CODENAME main
+SRCEOF
+echo "      Done"
+
+# 3. Update package list
+echo "[3/3] Updating package list..."
+apt-get update -qq
+
+echo ""
+echo "============================================================"
+echo "  Setup Complete!"
+echo "============================================================"
+echo ""
+echo "  Install packages with:"
+echo "    sudo apt install vaultctl"
+echo ""
+CLIENTEOF
+    fi
     chmod +x "$REPO_DIR/setup-client.sh"
     
     print_step "index.html 생성..."
@@ -1013,7 +1053,7 @@ sudo chmod 600 /etc/apt/auth.conf.d/internal.conf
         .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 16px;font-size:14px;font-weight:500;border-radius:var(--radius);border:1px solid var(--border);background:var(--background);color:var(--foreground);text-decoration:none;transition:background .15s,border-color .15s}
         .btn:hover{background:var(--muted);border-color:var(--foreground)}
         .btn-group{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:32px}
-        .code-block{background:var(--foreground);color:#fafafa;border-radius:var(--radius);padding:16px 20px;overflow-x:auto;font-family:ui-monospace,'SF Mono',Consolas,monospace;font-size:13px;line-height:1.7}
+        .code-block{background:var(--foreground);color:#fafafa;border-radius:var(--radius);padding:16px 20px;overflow-x:auto;font-family:ui-monospace,'SF Mono',Consolas,monospace;font-size:13px;line-height:1.7;white-space:pre-wrap;word-break:break-all}
         .code-block .c{color:#71717a}
         code{background:var(--muted);padding:2px 6px;border-radius:4px;font-family:ui-monospace,'SF Mono',Consolas,monospace;font-size:13px}
         .info-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:24px}
@@ -1098,7 +1138,7 @@ HTMLEOF
         .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 16px;font-size:14px;font-weight:500;border-radius:var(--radius);border:1px solid var(--border);background:var(--background);color:var(--foreground);text-decoration:none;transition:background .15s,border-color .15s}
         .btn:hover{background:var(--muted);border-color:var(--foreground)}
         .btn-group{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:32px}
-        .code-block{background:var(--foreground);color:#fafafa;border-radius:var(--radius);padding:16px 20px;overflow-x:auto;font-family:ui-monospace,'SF Mono',Consolas,monospace;font-size:13px;line-height:1.7}
+        .code-block{background:var(--foreground);color:#fafafa;border-radius:var(--radius);padding:16px 20px;overflow-x:auto;font-family:ui-monospace,'SF Mono',Consolas,monospace;font-size:13px;line-height:1.7;white-space:pre-wrap;word-break:break-all}
         .code-block .c{color:#71717a}
         code{background:var(--muted);padding:2px 6px;border-radius:4px;font-family:ui-monospace,'SF Mono',Consolas,monospace;font-size:13px}
         .info-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:24px}
@@ -1294,6 +1334,12 @@ main() {
     
     if [[ "$reconfigure_only" == "true" ]]; then
         save_config
+        # GPG 키 파일 이름 마이그레이션 (KEY.gpg -> key.gpg)
+        if [[ -f "$REPO_DIR/KEY.gpg" ]] && [[ ! -f "$REPO_DIR/key.gpg" ]]; then
+            print_step "GPG 키 파일 이름 변경 (KEY.gpg -> key.gpg)..."
+            mv "$REPO_DIR/KEY.gpg" "$REPO_DIR/key.gpg"
+            mv "$REPO_DIR/KEY" "$REPO_DIR/key" 2>/dev/null || true
+        fi
         setup_reprepro
         setup_auth
         setup_nginx
