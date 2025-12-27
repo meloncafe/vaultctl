@@ -1,5 +1,5 @@
 """명령어 모듈."""
 
-from . import auth, docker, lxc, setup, token, extended
+from vaultctl.commands import auth, docker, lxc, setup, token, extended
 
 __all__ = ["auth", "docker", "lxc", "setup", "token", "extended"]

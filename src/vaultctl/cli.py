@@ -6,9 +6,9 @@ import typer
 from rich.console import Console
 from rich.panel import Panel
 
-from . import __version__
-from .commands import auth, docker, lxc, setup, token, extended
-from .config import settings
+from vaultctl import __version__
+from vaultctl.commands import auth, docker, lxc, setup, token, extended
+from vaultctl.config import settings
 
 app = typer.Typer(
     name="vaultctl",

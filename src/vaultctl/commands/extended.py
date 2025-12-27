@@ -18,8 +18,8 @@ from typing import Optional, List
 import typer
 from rich.console import Console
 
-from ..config import settings
-from ..vault_client import get_client, VaultError
+from vaultctl.config import settings
+from vaultctl.vault_client import get_client, VaultError
 
 app = typer.Typer(help="확장 명령어 (teller 스타일)")
 console = Console()

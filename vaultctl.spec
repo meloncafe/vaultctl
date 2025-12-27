@@ -7,14 +7,29 @@ from pathlib import Path
 block_cipher = None
 
 # 소스 경로
-src_path = Path("src/vaultctl")
+src_path = Path("src")
 
 a = Analysis(
-    [str(src_path / "cli.py")],
-    pathex=[],
+    [str(src_path / "vaultctl" / "__main__.py")],
+    pathex=[str(src_path)],
     binaries=[],
     datas=[],
     hiddenimports=[
+        # vaultctl 모듈
+        "vaultctl",
+        "vaultctl.cli",
+        "vaultctl.config",
+        "vaultctl.vault_client",
+        "vaultctl.onepassword",
+        "vaultctl.utils",
+        "vaultctl.commands",
+        "vaultctl.commands.auth",
+        "vaultctl.commands.docker",
+        "vaultctl.commands.lxc",
+        "vaultctl.commands.setup",
+        "vaultctl.commands.token",
+        "vaultctl.commands.extended",
+        # 외부 의존성
         "typer",
         "rich",
         "httpx",

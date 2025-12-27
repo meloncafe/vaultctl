@@ -7,10 +7,10 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from ..config import settings
-from ..onepassword import get_vault_token_from_op, is_op_installed, is_op_signed_in
-from ..vault_client import VaultClient, VaultError, get_client, set_token
-from ..utils import format_duration
+from vaultctl.config import settings
+from vaultctl.onepassword import get_vault_token_from_op, is_op_installed, is_op_signed_in
+from vaultctl.vault_client import VaultClient, VaultError, get_client, set_token
+from vaultctl.utils import format_duration
 
 app = typer.Typer(help="인증 관리")
 console = Console()

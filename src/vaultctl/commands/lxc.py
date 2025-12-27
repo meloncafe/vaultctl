@@ -9,10 +9,10 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from ..config import settings
-from ..vault_client import VaultError
-from ..utils import copy_to_clipboard, create_kv_table, parse_key_value_args
-from .auth import ensure_authenticated
+from vaultctl.config import settings
+from vaultctl.vault_client import VaultError
+from vaultctl.utils import copy_to_clipboard, create_kv_table, parse_key_value_args
+from vaultctl.commands.auth import ensure_authenticated
 
 app = typer.Typer(help="LXC 컨테이너 정보 관리")
 console = Console()

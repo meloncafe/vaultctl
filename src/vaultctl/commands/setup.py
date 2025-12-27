@@ -10,9 +10,9 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 
-from ..config import settings
-from ..onepassword import get_vault_token_from_op, is_op_installed, is_op_signed_in
-from ..vault_client import VaultClient, VaultError
+from vaultctl.config import settings
+from vaultctl.onepassword import get_vault_token_from_op, is_op_installed, is_op_signed_in
+from vaultctl.vault_client import VaultClient, VaultError
 
 app = typer.Typer(help="초기 설정 및 systemd 관리")
 console = Console()
@@ -228,7 +228,7 @@ def show_env(
 @app.command("test")
 def test_connection():
     """Vault 연결 및 인증 테스트."""
-    from .auth import ensure_authenticated
+    from vaultctl.commands.auth import ensure_authenticated
 
     console.print("[bold]연결 테스트[/bold]\n")
 

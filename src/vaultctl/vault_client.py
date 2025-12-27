@@ -5,7 +5,7 @@ from typing import Any, Optional
 import httpx
 from rich.console import Console
 
-from .config import settings
+from vaultctl.config import settings
 
 console = Console()
 

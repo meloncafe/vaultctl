@@ -7,11 +7,11 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from ..config import settings
-from ..onepassword import get_vault_token_from_op, save_vault_token_to_op
-from ..vault_client import VaultError
-from ..utils import format_duration
-from .auth import ensure_authenticated
+from vaultctl.config import settings
+from vaultctl.onepassword import get_vault_token_from_op, save_vault_token_to_op
+from vaultctl.vault_client import VaultError
+from vaultctl.utils import format_duration
+from vaultctl.commands.auth import ensure_authenticated
 
 app = typer.Typer(help="토큰 관리")
 console = Console()

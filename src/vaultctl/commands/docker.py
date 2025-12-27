@@ -9,10 +9,10 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from ..config import settings
-from ..vault_client import VaultError
-from ..utils import create_kv_table, load_env_file, parse_key_value_args, write_env_file
-from .auth import ensure_authenticated
+from vaultctl.config import settings
+from vaultctl.vault_client import VaultError
+from vaultctl.utils import create_kv_table, load_env_file, parse_key_value_args, write_env_file
+from vaultctl.commands.auth import ensure_authenticated
 
 app = typer.Typer(help="Docker 환경변수 관리")
 console = Console()
