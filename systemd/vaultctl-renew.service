@@ -1,0 +1,16 @@
+[Unit]
+Description=Vault Token Auto Renew
+After=network.target
+
+[Service]
+Type=oneshot
+# 1Password CLI가 필요하면 op 경로 추가
+# Environment=PATH=/usr/local/bin:/usr/bin
+ExecStart=/usr/local/bin/vaultctl token auto-renew --quiet
+
+# 환경변수 파일 사용 (권장)
+EnvironmentFile=-/etc/vaultctl/env
+
+# 또는 직접 토큰 지정 (비권장 - 보안 위험)
+# Environment=VAULT_TOKEN=hvs.xxx
+# Environment=VAULT_ADDR=https://vault.example.com
