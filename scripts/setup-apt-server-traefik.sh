@@ -1334,6 +1334,21 @@ main() {
     
     if [[ "$reconfigure_only" == "true" ]]; then
         save_config
+
+        # 기존 GPG 키 ID 조회
+        export GNUPGHOME="$GPG_HOME"
+        GPG_KEY_ID=$(gpg --list-keys --keyid-format SHORT 2>/dev/null | grep -E '^\s+[A-F0-9]+' | awk '{print $1}' | head -1)
+        if [[ -z "$GPG_KEY_ID" ]]; then
+            GPG_KEY_ID=$(gpg --list-keys --keyid-format LONG 2>/dev/null | grep -oP '[A-F0-9]{16}' | head -1)
+            GPG_KEY_ID="${GPG_KEY_ID: -8}"
+        fi
+        if [[ -z "$GPG_KEY_ID" ]]; then
+            print_error "GPG 키를 찾을 수 없습니다. 전체 설치를 진행하세요."
+            exit 1
+        fi
+        export GPG_KEY_ID
+        print_step "GPG 키 ID: $GPG_KEY_ID"
+
         # GPG 키 파일 이름 마이그레이션 (KEY.gpg -> key.gpg)
         if [[ -f "$REPO_DIR/KEY.gpg" ]] && [[ ! -f "$REPO_DIR/key.gpg" ]]; then
             print_step "GPG 키 파일 이름 변경 (KEY.gpg -> key.gpg)..."
