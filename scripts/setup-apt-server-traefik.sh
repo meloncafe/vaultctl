@@ -312,6 +312,165 @@ install_packages() {
 # 디렉토리 구조 생성
 # ═══════════════════════════════════════════════════════════════════════════════
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# Fancyindex 테마 설정
+# ═══════════════════════════════════════════════════════════════════════════════
+
+setup_fancyindex_theme() {
+    print_step "Fancyindex 테마 설치..."
+    
+    mkdir -p "$REPO_DIR/.theme"
+    
+    # 템플릿 파일 찾기
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    THEME_DIR=""
+    
+    for path in "$SCRIPT_DIR/../templates/fancyindex" "$SCRIPT_DIR/templates/fancyindex" "/opt/vaultctl/templates/fancyindex"; do
+        if [[ -d "$path" ]]; then
+            THEME_DIR="$path"
+            break
+        fi
+    done
+    
+    if [[ -n "$THEME_DIR" ]] && [[ -f "$THEME_DIR/header.html" ]]; then
+        cp "$THEME_DIR/header.html" "$REPO_DIR/.theme/"
+        cp "$THEME_DIR/footer.html" "$REPO_DIR/.theme/"
+    else
+        # 템플릿이 없으면 인라인으로 생성
+        cat > "$REPO_DIR/.theme/header.html" << 'HEADEREOF'
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>APT Repository</title>
+    <style>
+        :root {
+            --background: #ffffff;
+            --foreground: #0a0a0a;
+            --muted: #f4f4f5;
+            --muted-foreground: #71717a;
+            --border: #e4e4e7;
+            --radius: 0.5rem;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--background);
+            color: var(--foreground);
+            line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 48px 24px;
+        }
+        .header {
+            margin-bottom: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .header h1 {
+            font-size: 24px;
+            font-weight: 600;
+            letter-spacing: -0.025em;
+        }
+        .header h1 a {
+            color: var(--foreground);
+            text-decoration: none;
+        }
+        .header h1 a:hover {
+            text-decoration: underline;
+        }
+        #list {
+            background: var(--background);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            overflow: hidden;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        thead {
+            background: var(--muted);
+        }
+        th {
+            text-align: left;
+            padding: 12px 16px;
+            font-weight: 500;
+            color: var(--muted-foreground);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            border-bottom: 1px solid var(--border);
+        }
+        th a {
+            color: var(--muted-foreground);
+            text-decoration: none;
+        }
+        td {
+            padding: 10px 16px;
+            border-bottom: 1px solid var(--border);
+        }
+        tr:last-child td {
+            border-bottom: none;
+        }
+        tbody tr:hover {
+            background: var(--muted);
+        }
+        td a, .list a {
+            color: var(--foreground);
+            text-decoration: none;
+            font-weight: 500;
+        }
+        td a:hover, .list a:hover {
+            text-decoration: underline;
+        }
+        .size, .date {
+            color: var(--muted-foreground);
+            font-family: ui-monospace, 'SF Mono', 'Consolas', monospace;
+            font-size: 13px;
+        }
+        .footer {
+            margin-top: 32px;
+            padding-top: 24px;
+            border-top: 1px solid var(--border);
+            text-align: center;
+            font-size: 12px;
+            color: var(--muted-foreground);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1><a href="/">APT Repository</a></h1>
+        </div>
+        <div id="list">
+HEADEREOF
+        
+        cat > "$REPO_DIR/.theme/footer.html" << 'FOOTEREOF'
+        </div>
+        <div class="footer">
+            Powered by reprepro + GPG signing
+        </div>
+    </div>
+</body>
+</html>
+FOOTEREOF
+    fi
+    
+    chown -R www-data:www-data "$REPO_DIR/.theme" 2>/dev/null || true
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 디렉토리 설정
+# ═══════════════════════════════════════════════════════════════════════════════
+
 setup_directories() {
     print_header "디렉토리 구조"
     
@@ -486,10 +645,18 @@ EOF
 setup_nginx() {
     print_header "Nginx 설정"
     
+    # fancyindex 모듈 설치
+    print_step "fancyindex 모듈 설치..."
+    apt-get install -y libnginx-mod-http-fancyindex >/dev/null 2>&1 || true
+    
     print_step "Nginx 설정 업데이트..."
     rm -f /etc/nginx/sites-enabled/default
     
+    # fancyindex 테마 설치
+    setup_fancyindex_theme
+    
     if [[ "$ENABLE_AUTH" == "true" ]]; then
+        # Private: 인증 필요, autoindex off (보안)
         cat > /etc/nginx/sites-available/apt-repo << EOF
 server {
     listen $LISTEN_PORT;
@@ -497,19 +664,18 @@ server {
     
     root $REPO_DIR;
     
-    # 공개 접근 허용 (GPG 키, 설치 스크립트)
-    location ~ ^/(KEY\.gpg|KEY|add-key\.sh|setup-client\.sh|index\.html)$ {
+    # Public files (GPG key, setup script)
+    location ~ ^/(key\.gpg|key|setup-client\.sh|index\.html)$ {
         allow all;
     }
     
-    # 나머지는 인증 필요
+    # Protected with authentication
     location / {
         auth_basic "APT Repository";
         auth_basic_user_file $REPO_BASE/.htpasswd;
         
-        autoindex on;
-        autoindex_exact_size off;
-        autoindex_localtime on;
+        # No directory listing for security
+        autoindex off;
     }
     
     access_log /var/log/nginx/apt-access.log;
@@ -517,6 +683,7 @@ server {
 }
 EOF
     else
+        # Public: no auth, fancyindex on (styled directory listing)
         cat > /etc/nginx/sites-available/apt-repo << EOF
 server {
     listen $LISTEN_PORT;
@@ -524,10 +691,20 @@ server {
     
     root $REPO_DIR;
     
+    # Theme files
+    location /.theme/ {
+        alias $REPO_DIR/.theme/;
+    }
+    
+    # Directory listing with fancyindex
     location / {
-        autoindex on;
-        autoindex_exact_size off;
-        autoindex_localtime on;
+        fancyindex on;
+        fancyindex_exact_size off;
+        fancyindex_localtime on;
+        fancyindex_header "/.theme/header.html";
+        fancyindex_footer "/.theme/footer.html";
+        fancyindex_time_format "%Y-%m-%d %H:%M";
+        fancyindex_name_length 50;
     }
     
     access_log /var/log/nginx/apt-access.log;
@@ -761,14 +938,51 @@ CLIENTEOF
         fi
     done
     
+    # Public/Private에 따른 플레이스홀더 값 설정
+    if [[ "$ENABLE_AUTH" == "true" ]]; then
+        AUTH_BADGE='<span class="badge">Private</span>'
+        AUTH_COMMENT="with your credentials"
+        AUTH_ARGS="-s -- USER PASSWORD"
+        AUTH_CURL="-u USER:PASS"
+        AUTH_SECTION='
+<span class="comment"># 2. Configure authentication</span>
+echo "machine __DOMAIN__ login USER password PASS" | \
+    sudo tee /etc/apt/auth.conf.d/internal.conf
+sudo chmod 600 /etc/apt/auth.conf.d/internal.conf
+'
+        AUTH_STEP="3"
+        INSTALL_STEP="4"
+    else
+        AUTH_BADGE='<span class="badge" style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);">Public</span>'
+        AUTH_COMMENT=""
+        AUTH_ARGS=""
+        AUTH_CURL=""
+        AUTH_SECTION=""
+        AUTH_STEP="2"
+        INSTALL_STEP="3"
+    fi
+    
     if [[ -n "$TEMPLATE_FILE" ]]; then
         # 템플릿 복사 후 플레이스홀더 치환
         cp "$TEMPLATE_FILE" "$REPO_DIR/index.html"
         sed -i "s|__DOMAIN__|$DOMAIN|g" "$REPO_DIR/index.html"
         sed -i "s|__CODENAME__|$REPO_CODENAME|g" "$REPO_DIR/index.html"
+        sed -i "s|__AUTH_BADGE__|$AUTH_BADGE|g" "$REPO_DIR/index.html"
+        sed -i "s|__AUTH_COMMENT__|$AUTH_COMMENT|g" "$REPO_DIR/index.html"
+        sed -i "s|__AUTH_ARGS__|$AUTH_ARGS|g" "$REPO_DIR/index.html"
+        sed -i "s|__AUTH_CURL__|$AUTH_CURL|g" "$REPO_DIR/index.html"
+        sed -i "s|__AUTH_STEP__|$AUTH_STEP|g" "$REPO_DIR/index.html"
+        sed -i "s|__INSTALL_STEP__|$INSTALL_STEP|g" "$REPO_DIR/index.html"
+        # AUTH_SECTION은 여러 줄이므로 별도 처리
+        if [[ "$ENABLE_AUTH" == "true" ]]; then
+            sed -i 's|__AUTH_SECTION__|<span class="comment">\# 2. Configure authentication</span>\necho "machine '"$DOMAIN"' login USER password PASS" \| \\\n    sudo tee /etc/apt/auth.conf.d/internal.conf\nsudo chmod 600 /etc/apt/auth.conf.d/internal.conf\n|g' "$REPO_DIR/index.html"
+        else
+            sed -i 's|__AUTH_SECTION__||g' "$REPO_DIR/index.html"
+        fi
     else
         # 템플릿이 없으면 기본 HTML 생성 (영문)
-        cat > "$REPO_DIR/index.html" << 'HTMLEOF'
+        if [[ "$ENABLE_AUTH" == "true" ]]; then
+            cat > "$REPO_DIR/index.html" << 'HTMLEOF'
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -784,11 +998,12 @@ CLIENTEOF
         code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; }
         pre { background: #1e1e2e; color: #cdd6f4; padding: 15px; border-radius: 8px; overflow-x: auto; }
         .info { background: #e0e7ff; border-left: 4px solid #667eea; padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 20px 0; }
+        .badge { display: inline-block; background: #10b981; color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; margin-left: 8px; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Internal APT Repository</h1>
+        <h1>Internal APT Repository <span class="badge">Private</span></h1>
         <p><a href="/key.gpg">GPG Key</a> | <a href="/setup-client.sh">Setup Script</a></p>
         <div class="info">
             <strong>Domain:</strong> DOMAIN_PLACEHOLDER<br>
@@ -817,6 +1032,53 @@ sudo apt install vaultctl</pre>
 </body>
 </html>
 HTMLEOF
+        else
+            cat > "$REPO_DIR/index.html" << 'HTMLEOF'
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>APT Repository</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 40px; background: #f5f5f5; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        h1 { color: #333; border-bottom: 2px solid #667eea; padding-bottom: 10px; }
+        h2 { color: #555; margin-top: 30px; }
+        a { color: #667eea; }
+        code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; }
+        pre { background: #1e1e2e; color: #cdd6f4; padding: 15px; border-radius: 8px; overflow-x: auto; }
+        .info { background: #e0e7ff; border-left: 4px solid #667eea; padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 20px 0; }
+        .badge { display: inline-block; background: #3b82f6; color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; margin-left: 8px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Internal APT Repository <span class="badge">Public</span></h1>
+        <p><a href="/key.gpg">GPG Key</a> | <a href="/setup-client.sh">Setup Script</a></p>
+        <div class="info">
+            <strong>Domain:</strong> DOMAIN_PLACEHOLDER<br>
+            <strong>Codename:</strong> CODENAME_PLACEHOLDER
+        </div>
+        <h2>Quick Setup</h2>
+        <pre>curl -fsSL https://DOMAIN_PLACEHOLDER/setup-client.sh | sudo bash</pre>
+        <h2>Manual Setup</h2>
+        <pre># 1. Add GPG key
+curl -fsSL https://DOMAIN_PLACEHOLDER/key.gpg | \
+    sudo gpg --dearmor -o /usr/share/keyrings/internal-apt.gpg
+
+# 2. Add APT source
+echo "deb [signed-by=/usr/share/keyrings/internal-apt.gpg] https://DOMAIN_PLACEHOLDER CODENAME_PLACEHOLDER main" | \
+    sudo tee /etc/apt/sources.list.d/internal.list
+
+# 3. Install
+sudo apt update
+sudo apt install vaultctl</pre>
+    </div>
+</body>
+</html>
+HTMLEOF
+        fi
         sed -i "s|DOMAIN_PLACEHOLDER|$DOMAIN|g" "$REPO_DIR/index.html"
         sed -i "s|CODENAME_PLACEHOLDER|$REPO_CODENAME|g" "$REPO_DIR/index.html"
     fi

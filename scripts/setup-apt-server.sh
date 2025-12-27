@@ -500,24 +500,25 @@ setup_caddy() {
     fi
     
     if [[ "$ENABLE_AUTH" == "true" ]] && [[ -n "$CADDY_HASH" ]]; then
+        # Private: auth required, no browse (security)
         cat > /etc/caddy/Caddyfile << EOF
 $DOMAIN {
     root * $REPO_DIR
     
-    # 공개 파일 (GPG 키, 설치 스크립트)
+    # Public files (GPG key, setup script)
     @public {
-        path /key.gpg /key /add-key.sh /setup-client.sh /index.html
+        path /key.gpg /key /setup-client.sh /index.html
     }
     handle @public {
         file_server
     }
     
-    # 나머지는 인증 필요
+    # Protected with authentication, no directory listing
     handle {
         basicauth {
             $AUTH_USER $CADDY_HASH
         }
-        file_server browse
+        file_server
     }
     
     log {
@@ -526,6 +527,7 @@ $DOMAIN {
 }
 EOF
     else
+        # Public: no auth, browse enabled (convenience)
         cat > /etc/caddy/Caddyfile << EOF
 $DOMAIN {
     root * $REPO_DIR
@@ -768,14 +770,44 @@ CLIENTEOF
         fi
     done
     
+    # Public/Private에 따른 플레이스홀더 값 설정
+    if [[ "$ENABLE_AUTH" == "true" ]]; then
+        AUTH_BADGE='<span class="badge">Private</span>'
+        AUTH_COMMENT="with your credentials"
+        AUTH_ARGS="-s -- USER PASSWORD"
+        AUTH_CURL="-u USER:PASS"
+        AUTH_STEP="3"
+        INSTALL_STEP="4"
+    else
+        AUTH_BADGE='<span class="badge" style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);">Public</span>'
+        AUTH_COMMENT=""
+        AUTH_ARGS=""
+        AUTH_CURL=""
+        AUTH_STEP="2"
+        INSTALL_STEP="3"
+    fi
+    
     if [[ -n "$TEMPLATE_FILE" ]]; then
         # 템플릿 복사 후 플레이스홀더 치환
         cp "$TEMPLATE_FILE" "$REPO_DIR/index.html"
         sed -i "s|__DOMAIN__|$DOMAIN|g" "$REPO_DIR/index.html"
         sed -i "s|__CODENAME__|$REPO_CODENAME|g" "$REPO_DIR/index.html"
+        sed -i "s|__AUTH_BADGE__|$AUTH_BADGE|g" "$REPO_DIR/index.html"
+        sed -i "s|__AUTH_COMMENT__|$AUTH_COMMENT|g" "$REPO_DIR/index.html"
+        sed -i "s|__AUTH_ARGS__|$AUTH_ARGS|g" "$REPO_DIR/index.html"
+        sed -i "s|__AUTH_CURL__|$AUTH_CURL|g" "$REPO_DIR/index.html"
+        sed -i "s|__AUTH_STEP__|$AUTH_STEP|g" "$REPO_DIR/index.html"
+        sed -i "s|__INSTALL_STEP__|$INSTALL_STEP|g" "$REPO_DIR/index.html"
+        # AUTH_SECTION은 여러 줄이므로 별도 처리
+        if [[ "$ENABLE_AUTH" == "true" ]]; then
+            sed -i 's|__AUTH_SECTION__|<span class="comment">\# 2. Configure authentication</span>\necho "machine '"$DOMAIN"' login USER password PASS" \| \\\n    sudo tee /etc/apt/auth.conf.d/internal.conf\nsudo chmod 600 /etc/apt/auth.conf.d/internal.conf\n|g' "$REPO_DIR/index.html"
+        else
+            sed -i 's|__AUTH_SECTION__||g' "$REPO_DIR/index.html"
+        fi
     else
         # 템플릿이 없으면 기본 HTML 생성 (영문)
-        cat > "$REPO_DIR/index.html" << 'HTMLEOF'
+        if [[ "$ENABLE_AUTH" == "true" ]]; then
+            cat > "$REPO_DIR/index.html" << 'HTMLEOF'
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -791,20 +823,19 @@ CLIENTEOF
         code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; }
         pre { background: #1e1e2e; color: #cdd6f4; padding: 15px; border-radius: 8px; overflow-x: auto; }
         .info { background: #e0e7ff; border-left: 4px solid #667eea; padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 20px 0; }
+        .badge { display: inline-block; background: #10b981; color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; margin-left: 8px; }
         .secure { background: #d1fae5; border-left: 4px solid #10b981; padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 20px 0; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Internal APT Repository</h1>
+        <h1>Internal APT Repository <span class="badge">Private</span></h1>
         <p><a href="/key.gpg">GPG Key</a> | <a href="/setup-client.sh">Setup Script</a></p>
         <div class="info">
             <strong>Domain:</strong> DOMAIN_PLACEHOLDER<br>
             <strong>Codename:</strong> CODENAME_PLACEHOLDER
         </div>
-        <div class="secure">
-            <strong>HTTPS enabled</strong> - Caddy + Let's Encrypt
-        </div>
+        <div class="secure">HTTPS enabled - Caddy + Let's Encrypt</div>
         <h2>Quick Setup</h2>
         <pre>curl -fsSL https://DOMAIN_PLACEHOLDER/setup-client.sh | sudo bash -s -- USER PASSWORD</pre>
         <h2>Manual Setup</h2>
@@ -828,6 +859,55 @@ sudo apt install vaultctl</pre>
 </body>
 </html>
 HTMLEOF
+        else
+            cat > "$REPO_DIR/index.html" << 'HTMLEOF'
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>APT Repository</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 40px; background: #f5f5f5; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        h1 { color: #333; border-bottom: 2px solid #667eea; padding-bottom: 10px; }
+        h2 { color: #555; margin-top: 30px; }
+        a { color: #667eea; }
+        code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; }
+        pre { background: #1e1e2e; color: #cdd6f4; padding: 15px; border-radius: 8px; overflow-x: auto; }
+        .info { background: #e0e7ff; border-left: 4px solid #667eea; padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 20px 0; }
+        .badge { display: inline-block; background: #3b82f6; color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; margin-left: 8px; }
+        .secure { background: #d1fae5; border-left: 4px solid #10b981; padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 20px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Internal APT Repository <span class="badge">Public</span></h1>
+        <p><a href="/key.gpg">GPG Key</a> | <a href="/setup-client.sh">Setup Script</a></p>
+        <div class="info">
+            <strong>Domain:</strong> DOMAIN_PLACEHOLDER<br>
+            <strong>Codename:</strong> CODENAME_PLACEHOLDER
+        </div>
+        <div class="secure">HTTPS enabled - Caddy + Let's Encrypt</div>
+        <h2>Quick Setup</h2>
+        <pre>curl -fsSL https://DOMAIN_PLACEHOLDER/setup-client.sh | sudo bash</pre>
+        <h2>Manual Setup</h2>
+        <pre># 1. Add GPG key
+curl -fsSL https://DOMAIN_PLACEHOLDER/key.gpg | \
+    sudo gpg --dearmor -o /usr/share/keyrings/internal-apt.gpg
+
+# 2. Add APT source
+echo "deb [signed-by=/usr/share/keyrings/internal-apt.gpg] https://DOMAIN_PLACEHOLDER CODENAME_PLACEHOLDER main" | \
+    sudo tee /etc/apt/sources.list.d/internal.list
+
+# 3. Install
+sudo apt update
+sudo apt install vaultctl</pre>
+    </div>
+</body>
+</html>
+HTMLEOF
+        fi
         sed -i "s|DOMAIN_PLACEHOLDER|$DOMAIN|g" "$REPO_DIR/index.html"
         sed -i "s|CODENAME_PLACEHOLDER|$REPO_CODENAME|g" "$REPO_DIR/index.html"
     fi

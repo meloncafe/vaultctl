@@ -3,189 +3,210 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>APT Repository - __DOMAIN__</title>
+    <title>APT Repository</title>
     <style>
-        * { box-sizing: border-box; }
+        :root {
+            --background: #ffffff;
+            --foreground: #0a0a0a;
+            --card: #ffffff;
+            --card-foreground: #0a0a0a;
+            --muted: #f4f4f5;
+            --muted-foreground: #71717a;
+            --border: #e4e4e7;
+            --ring: #18181b;
+            --radius: 0.5rem;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            margin: 0;
-            padding: 40px 20px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--background);
+            color: var(--foreground);
+            line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
         }
         .container {
             max-width: 800px;
             margin: 0 auto;
-            background: white;
-            padding: 40px;
-            border-radius: 16px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            padding: 48px 24px;
         }
-        h1 {
-            color: #1a1a2e;
-            font-size: 2em;
-            margin: 0 0 10px 0;
-            display: flex;
-            align-items: center;
-            gap: 12px;
+        .header {
+            margin-bottom: 32px;
         }
-        .subtitle {
-            color: #666;
-            margin-bottom: 30px;
+        .header h1 {
+            font-size: 30px;
+            font-weight: 700;
+            letter-spacing: -0.025em;
+            margin-bottom: 8px;
         }
-        .links {
-            margin-bottom: 30px;
+        .header p {
+            color: var(--muted-foreground);
+            font-size: 14px;
         }
-        .links a {
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+        .card-header {
+            margin-bottom: 16px;
+        }
+        .card-title {
+            font-size: 18px;
+            font-weight: 600;
+            letter-spacing: -0.01em;
+        }
+        .card-description {
+            font-size: 14px;
+            color: var(--muted-foreground);
+            margin-top: 4px;
+        }
+        .btn {
             display: inline-flex;
             align-items: center;
-            gap: 6px;
-            color: #667eea;
-            text-decoration: none;
+            justify-content: center;
+            gap: 8px;
+            padding: 10px 16px;
+            font-size: 14px;
             font-weight: 500;
-            margin-right: 20px;
-            padding: 8px 16px;
-            background: #f0f0ff;
-            border-radius: 8px;
-            transition: all 0.2s;
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            background: var(--background);
+            color: var(--foreground);
+            text-decoration: none;
+            cursor: pointer;
+            transition: background 0.15s, border-color 0.15s;
         }
-        .links a:hover {
-            background: #667eea;
-            color: white;
+        .btn:hover {
+            background: var(--muted);
+            border-color: var(--foreground);
         }
-        .info-box {
-            background: linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%);
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 30px;
+        .btn-group {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
         }
-        .info-box table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-        .info-box td {
-            padding: 8px 0;
-        }
-        .info-box td:first-child {
-            font-weight: 600;
-            color: #4338ca;
-            width: 120px;
-        }
-        h2 {
-            color: #1a1a2e;
-            font-size: 1.3em;
-            margin: 30px 0 15px 0;
-            padding-bottom: 8px;
-            border-bottom: 2px solid #eee;
-        }
-        pre {
-            background: #1e1e2e;
-            color: #cdd6f4;
-            padding: 20px;
-            border-radius: 12px;
+        .code-block {
+            background: var(--foreground);
+            color: #fafafa;
+            border-radius: var(--radius);
+            padding: 16px 20px;
             overflow-x: auto;
-            font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+            font-family: ui-monospace, 'SF Mono', 'Consolas', monospace;
             font-size: 13px;
-            line-height: 1.6;
+            line-height: 1.7;
         }
-        pre .comment { color: #6c7086; }
-        pre .command { color: #89b4fa; }
+        .code-block .comment {
+            color: #71717a;
+        }
         code {
-            background: #f4f4f5;
-            padding: 2px 8px;
+            background: var(--muted);
+            padding: 2px 6px;
             border-radius: 4px;
-            font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
-            font-size: 0.9em;
+            font-family: ui-monospace, 'SF Mono', 'Consolas', monospace;
+            font-size: 13px;
         }
-        .badge {
-            display: inline-block;
-            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-            color: white;
-            padding: 4px 12px;
-            border-radius: 20px;
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .info-item {
+            padding: 16px;
+            background: var(--muted);
+            border-radius: var(--radius);
+        }
+        .info-item dt {
             font-size: 12px;
-            font-weight: 600;
+            color: var(--muted-foreground);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 4px;
+        }
+        .info-item dd {
+            font-size: 14px;
+            font-weight: 500;
+            font-family: ui-monospace, 'SF Mono', 'Consolas', monospace;
+        }
+        .separator {
+            height: 1px;
+            background: var(--border);
+            margin: 32px 0;
         }
         .footer {
-            margin-top: 40px;
-            padding-top: 20px;
-            border-top: 1px solid #eee;
-            color: #999;
-            font-size: 13px;
             text-align: center;
+            font-size: 12px;
+            color: var(--muted-foreground);
+        }
+        @media (max-width: 640px) {
+            .info-grid {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#667eea" stroke-width="2">
-                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-            </svg>
-            Internal APT Repository
-            <span class="badge">Private</span>
-        </h1>
-        <p class="subtitle">Private package repository for internal distribution</p>
+        <div class="header">
+            <h1>APT Repository</h1>
+            <p>Internal package distribution server</p>
+        </div>
 
-        <div class="links">
-            <a href="/key.gpg">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path>
-                </svg>
+        <div class="info-grid">
+            <dl class="info-item">
+                <dt>Domain</dt>
+                <dd>__DOMAIN__</dd>
+            </dl>
+            <dl class="info-item">
+                <dt>Codename</dt>
+                <dd>__CODENAME__</dd>
+            </dl>
+            <dl class="info-item">
+                <dt>Architecture</dt>
+                <dd>amd64</dd>
+            </dl>
+        </div>
+
+        <div class="btn-group" style="margin-bottom: 32px;">
+            <a href="/key.gpg" class="btn">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
                 GPG Key
             </a>
-            <a href="/setup-client.sh">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                    <polyline points="7 10 12 15 17 10"></polyline>
-                    <line x1="12" y1="15" x2="12" y2="3"></line>
-                </svg>
+            <a href="/setup-client.sh" class="btn">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                 Setup Script
             </a>
         </div>
 
-        <div class="info-box">
-            <table>
-                <tr>
-                    <td>Domain</td>
-                    <td><code>__DOMAIN__</code></td>
-                </tr>
-                <tr>
-                    <td>Codename</td>
-                    <td><code>__CODENAME__</code></td>
-                </tr>
-                <tr>
-                    <td>Architecture</td>
-                    <td><code>amd64</code></td>
-                </tr>
-            </table>
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Quick Setup</h2>
+                <p class="card-description">One command to configure everything</p>
+            </div>
+            <div class="code-block">curl -fsSL https://__DOMAIN__/setup-client.sh | sudo bash __AUTH_ARGS__</div>
         </div>
 
-        <h2>Quick Setup</h2>
-        <pre><span class="comment"># Run this command with your credentials</span>
-curl -fsSL https://__DOMAIN__/setup-client.sh | sudo bash -s -- USER PASSWORD</pre>
-
-        <h2>Manual Setup</h2>
-        <pre><span class="comment"># 1. Add GPG key</span>
-curl -fsSL -u USER:PASS https://__DOMAIN__/key.gpg | \
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Manual Setup</h2>
+                <p class="card-description">Step by step installation</p>
+            </div>
+            <div class="code-block"><span class="comment"># Add GPG key</span>
+curl -fsSL __AUTH_CURL__ https://__DOMAIN__/key.gpg | \
     sudo gpg --dearmor -o /usr/share/keyrings/internal-apt.gpg
-
-<span class="comment"># 2. Configure authentication</span>
-echo "machine __DOMAIN__ login USER password PASS" | \
-    sudo tee /etc/apt/auth.conf.d/internal.conf
-sudo chmod 600 /etc/apt/auth.conf.d/internal.conf
-
-<span class="comment"># 3. Add APT source</span>
+__AUTH_SECTION__
+<span class="comment"># Add APT source</span>
 echo "deb [signed-by=/usr/share/keyrings/internal-apt.gpg] https://__DOMAIN__ __CODENAME__ main" | \
     sudo tee /etc/apt/sources.list.d/internal.list
 
-<span class="comment"># 4. Install packages</span>
+<span class="comment"># Install</span>
 sudo apt update
-sudo apt install vaultctl</pre>
+sudo apt install vaultctl</div>
+        </div>
 
-        <h2>Available Packages</h2>
-        <pre><span class="comment"># List available packages after setup</span>
-apt-cache search --names-only '.*' 2>/dev/null | head -20</pre>
+        <div class="separator"></div>
 
         <div class="footer">
             Powered by reprepro + GPG signing

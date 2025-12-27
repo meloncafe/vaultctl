@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>APT Repository</title>
+    <style>
+        :root {
+            --background: #ffffff;
+            --foreground: #0a0a0a;
+            --muted: #f4f4f5;
+            --muted-foreground: #71717a;
+            --border: #e4e4e7;
+            --radius: 0.5rem;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--background);
+            color: var(--foreground);
+            line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 48px 24px;
+        }
+        .header {
+            margin-bottom: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .header h1 {
+            font-size: 24px;
+            font-weight: 600;
+            letter-spacing: -0.025em;
+        }
+        .header h1 a {
+            color: var(--foreground);
+            text-decoration: none;
+        }
+        .header h1 a:hover {
+            text-decoration: underline;
+        }
+        
+        /* Table Styles */
+        #list {
+            background: var(--background);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            overflow: hidden;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        thead {
+            background: var(--muted);
+        }
+        th {
+            text-align: left;
+            padding: 12px 16px;
+            font-weight: 500;
+            color: var(--muted-foreground);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            border-bottom: 1px solid var(--border);
+        }
+        th a {
+            color: var(--muted-foreground);
+            text-decoration: none;
+        }
+        td {
+            padding: 10px 16px;
+            border-bottom: 1px solid var(--border);
+        }
+        tr:last-child td {
+            border-bottom: none;
+        }
+        tbody tr:hover {
+            background: var(--muted);
+        }
+        td a, .list a {
+            color: var(--foreground);
+            text-decoration: none;
+            font-weight: 500;
+        }
+        td a:hover, .list a:hover {
+            text-decoration: underline;
+        }
+        .size, .date {
+            color: var(--muted-foreground);
+            font-family: ui-monospace, 'SF Mono', 'Consolas', monospace;
+            font-size: 13px;
+        }
+        
+        /* Footer */
+        .footer {
+            margin-top: 32px;
+            padding-top: 24px;
+            border-top: 1px solid var(--border);
+            text-align: center;
+            font-size: 12px;
+            color: var(--muted-foreground);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1><a href="/">APT Repository</a></h1>
+        </div>
+        <div id="list">
