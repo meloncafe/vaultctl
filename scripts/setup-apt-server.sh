@@ -1,58 +1,40 @@
 #!/bin/bash
 #===============================================================================
-# 개인 APT 저장소 서버 구축 스크립트
+# 개인 APT 저장소 서버 구축 스크립트 (Caddy 독립 실행)
 # 
-# 기능:
-#   - reprepro 기반 APT 저장소
-#   - GPG 서명 지원
-#   - Basic Auth 또는 IP 제한으로 프라이빗 구성
-#   - Caddy로 HTTPS 자동 인증서
+# 특징:
+#   - 대화형 설정 입력
+#   - 재설치 시 기존 값 표시 및 업데이트 지원
+#   - reprepro + GPG 서명
+#   - Caddy 웹서버 (자동 HTTPS)
 #
 # 사용법:
-#   # LXC 내부에서 실행
 #   sudo ./setup-apt-server.sh
-#
-# 요구사항:
-#   - Ubuntu 22.04+ LXC
-#   - 도메인 (예: apt.example.com)
+#   sudo ./setup-apt-server.sh --reconfigure  # 설정만 변경
 #===============================================================================
 
 set -e
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 설정
+# 상수 및 색상
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# APT 저장소 설정
-REPO_NAME="${REPO_NAME:-internal}"
-REPO_LABEL="${REPO_LABEL:-Internal Repository}"
-REPO_CODENAME="${REPO_CODENAME:-stable}"
-REPO_ARCH="${REPO_ARCH:-amd64}"
-REPO_COMPONENTS="${REPO_COMPONENTS:-main}"
-
-# 디렉토리
+CONFIG_FILE="/var/www/apt/.config"
 REPO_BASE="/var/www/apt"
 REPO_DIR="$REPO_BASE/repo"
-INCOMING_DIR="$REPO_BASE/incoming"
 GPG_HOME="$REPO_BASE/.gnupg"
 
-# GPG 설정
-GPG_NAME="${GPG_NAME:-APT Repository Signing Key}"
-GPG_EMAIL="${GPG_EMAIL:-apt@example.com}"
-GPG_EXPIRE="${GPG_EXPIRE:-0}"  # 0 = 무기한
-
-# 웹 서버 설정
-DOMAIN="${DOMAIN:-apt.example.com}"
-ENABLE_AUTH="${ENABLE_AUTH:-true}"
-AUTH_USER="${AUTH_USER:-apt}"
-AUTH_PASS="${AUTH_PASS:-}"  # 비어있으면 자동 생성
-
-# 색상
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
 NC='\033[0m'
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 유틸리티 함수
+# ═══════════════════════════════════════════════════════════════════════════════
 
 print_header() {
     echo ""
@@ -62,6 +44,241 @@ print_header() {
     echo ""
 }
 
+print_step() {
+    echo -e "${CYAN}▶${NC} $1"
+}
+
+print_success() {
+    echo -e "${GREEN}✓${NC} $1"
+}
+
+print_warning() {
+    echo -e "${YELLOW}!${NC} $1"
+}
+
+print_error() {
+    echo -e "${RED}✗${NC} $1"
+}
+
+# 사용자 입력 받기 (기본값 지원)
+prompt_input() {
+    local prompt="$1"
+    local default="$2"
+    local var_name="$3"
+    local is_password="${4:-false}"
+    local input
+    
+    if [[ -n "$default" ]]; then
+        if [[ "$is_password" == "true" ]]; then
+            echo -en "${BOLD}$prompt${NC} [********]: "
+        else
+            echo -en "${BOLD}$prompt${NC} [${CYAN}$default${NC}]: "
+        fi
+    else
+        echo -en "${BOLD}$prompt${NC}: "
+    fi
+    
+    if [[ "$is_password" == "true" ]]; then
+        read -s input
+        echo ""
+    else
+        read input
+    fi
+    
+    if [[ -z "$input" ]]; then
+        eval "$var_name=\"$default\""
+    else
+        eval "$var_name=\"$input\""
+    fi
+}
+
+# Yes/No 프롬프트
+prompt_yn() {
+    local prompt="$1"
+    local default="$2"
+    local answer
+    
+    if [[ "$default" == "y" ]]; then
+        echo -en "${BOLD}$prompt${NC} [Y/n]: "
+    else
+        echo -en "${BOLD}$prompt${NC} [y/N]: "
+    fi
+    
+    read answer
+    answer=${answer:-$default}
+    
+    [[ "$answer" =~ ^[Yy] ]]
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 설정 로드/저장
+# ═══════════════════════════════════════════════════════════════════════════════
+
+load_existing_config() {
+    if [[ -f "$CONFIG_FILE" ]]; then
+        source "$CONFIG_FILE"
+        return 0
+    fi
+    return 1
+}
+
+save_config() {
+    mkdir -p "$(dirname "$CONFIG_FILE")"
+    cat > "$CONFIG_FILE" << EOF
+# APT 저장소 설정 (자동 생성됨)
+# 생성일: $(date '+%Y-%m-%d %H:%M:%S')
+# 웹서버: Caddy (자동 HTTPS)
+
+DOMAIN="$DOMAIN"
+GPG_EMAIL="$GPG_EMAIL"
+GPG_NAME="$GPG_NAME"
+REPO_NAME="$REPO_NAME"
+REPO_LABEL="$REPO_LABEL"
+REPO_CODENAME="$REPO_CODENAME"
+REPO_ARCH="$REPO_ARCH"
+ENABLE_AUTH="$ENABLE_AUTH"
+AUTH_USER="$AUTH_USER"
+AUTH_PASS="$AUTH_PASS"
+WEB_SERVER="caddy"
+EOF
+    chmod 600 "$CONFIG_FILE"
+    print_success "설정 저장됨: $CONFIG_FILE"
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 대화형 설정
+# ═══════════════════════════════════════════════════════════════════════════════
+
+interactive_config() {
+    print_header "APT 저장소 설정"
+    
+    # 기존 설정 로드
+    local existing_config=false
+    if load_existing_config; then
+        existing_config=true
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${YELLOW}  기존 설정 발견${NC}"
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+        echo "  도메인:       $DOMAIN"
+        echo "  GPG 이메일:   $GPG_EMAIL"
+        echo "  저장소 이름:  $REPO_NAME"
+        echo "  코드네임:     $REPO_CODENAME"
+        echo "  인증 사용:    $ENABLE_AUTH"
+        if [[ "$ENABLE_AUTH" == "true" ]]; then
+            echo "  인증 사용자:  $AUTH_USER"
+        fi
+        echo ""
+    fi
+    
+    # 기본값 설정 (기존 값 또는 샘플)
+    local default_domain="${DOMAIN:-}"
+    local default_gpg_email="${GPG_EMAIL:-}"
+    local default_gpg_name="${GPG_NAME:-APT Repository Signing Key}"
+    local default_repo_name="${REPO_NAME:-internal}"
+    local default_repo_label="${REPO_LABEL:-Internal Repository}"
+    local default_codename="${REPO_CODENAME:-stable}"
+    local default_arch="${REPO_ARCH:-amd64}"
+    local default_auth_user="${AUTH_USER:-apt}"
+    local default_enable_auth="${ENABLE_AUTH:-true}"
+    
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${CYAN}  기본 설정 (필수)${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo -e "${YELLOW}참고: Caddy가 자동으로 Let's Encrypt 인증서를 발급합니다.${NC}"
+    echo -e "${YELLOW}      도메인의 DNS가 이 서버를 가리켜야 합니다.${NC}"
+    echo ""
+    
+    # 필수 입력 - 도메인
+    while [[ -z "$DOMAIN" ]]; do
+        prompt_input "도메인 (예: apt.example.com)" "$default_domain" "DOMAIN"
+        if [[ -z "$DOMAIN" ]]; then
+            print_error "도메인은 필수입니다."
+        fi
+    done
+    
+    # 필수 입력 - GPG 이메일
+    while [[ -z "$GPG_EMAIL" ]]; do
+        prompt_input "GPG 서명용 이메일 (예: apt@example.com)" "$default_gpg_email" "GPG_EMAIL"
+        if [[ -z "$GPG_EMAIL" ]]; then
+            print_error "GPG 이메일은 필수입니다."
+        fi
+    done
+    
+    prompt_input "GPG 키 이름" "$default_gpg_name" "GPG_NAME"
+    
+    echo ""
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${CYAN}  저장소 설정${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    
+    prompt_input "저장소 이름 (Origin)" "$default_repo_name" "REPO_NAME"
+    prompt_input "저장소 라벨" "$default_repo_label" "REPO_LABEL"
+    prompt_input "배포판 코드네임" "$default_codename" "REPO_CODENAME"
+    prompt_input "아키텍처" "$default_arch" "REPO_ARCH"
+    
+    echo ""
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${CYAN}  인증 설정${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    
+    local auth_default="y"
+    [[ "$default_enable_auth" == "false" ]] && auth_default="n"
+    
+    if prompt_yn "Basic Auth 인증을 사용하시겠습니까?" "$auth_default"; then
+        ENABLE_AUTH="true"
+        prompt_input "인증 사용자명" "$default_auth_user" "AUTH_USER"
+        
+        echo -en "${BOLD}인증 비밀번호${NC} [Enter=자동생성/기존유지]: "
+        read -s input_pass
+        echo ""
+        
+        if [[ -z "$input_pass" ]]; then
+            if [[ -z "$AUTH_PASS" ]]; then
+                AUTH_PASS=$(openssl rand -base64 16 | tr -dc 'a-zA-Z0-9' | head -c 16)
+                echo -e "  ${GREEN}비밀번호 자동 생성됨${NC}"
+            else
+                echo -e "  ${GREEN}기존 비밀번호 유지${NC}"
+            fi
+        else
+            AUTH_PASS="$input_pass"
+            echo -e "  ${GREEN}새 비밀번호 설정됨${NC}"
+        fi
+    else
+        ENABLE_AUTH="false"
+        AUTH_USER=""
+        AUTH_PASS=""
+    fi
+    
+    # 설정 확인
+    echo ""
+    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${GREEN}  설정 확인${NC}"
+    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo "  도메인:        $DOMAIN"
+    echo "  GPG 이메일:    $GPG_EMAIL"
+    echo "  GPG 키 이름:   $GPG_NAME"
+    echo "  저장소 이름:   $REPO_NAME"
+    echo "  코드네임:      $REPO_CODENAME"
+    echo "  웹서버:        Caddy (자동 HTTPS)"
+    echo "  인증 사용:     $ENABLE_AUTH"
+    if [[ "$ENABLE_AUTH" == "true" ]]; then
+        echo "  인증 사용자:   $AUTH_USER"
+        echo "  인증 비밀번호: ********"
+    fi
+    echo ""
+    
+    if ! prompt_yn "이 설정으로 진행하시겠습니까?" "y"; then
+        echo ""
+        print_warning "설정이 취소되었습니다. 다시 실행해주세요."
+        exit 0
+    fi
+}
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # 패키지 설치
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -69,29 +286,32 @@ print_header() {
 install_packages() {
     print_header "패키지 설치"
     
-    apt-get update
-    apt-get install -y \
+    print_step "apt 업데이트..."
+    apt-get update -qq
+    
+    print_step "필수 패키지 설치..."
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
         reprepro \
         gnupg \
         gnupg-agent \
-        debian-keyring \
-        debian-archive-keyring \
-        apt-utils \
         apache2-utils \
         curl \
-        jq
+        rng-tools 2>/dev/null || true
     
     # Caddy 설치
     if ! command -v caddy &> /dev/null; then
+        print_step "Caddy 웹서버 설치..."
         curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | \
-            gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+            gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg 2>/dev/null
         curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | \
-            tee /etc/apt/sources.list.d/caddy-stable.list
-        apt-get update
-        apt-get install -y caddy
+            tee /etc/apt/sources.list.d/caddy-stable.list > /dev/null
+        apt-get update -qq
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq caddy
+    else
+        print_success "Caddy 이미 설치됨"
     fi
     
-    echo -e "${GREEN}✓${NC} 패키지 설치 완료"
+    print_success "패키지 설치 완료"
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -99,41 +319,74 @@ install_packages() {
 # ═══════════════════════════════════════════════════════════════════════════════
 
 setup_directories() {
-    print_header "디렉토리 구조 생성"
+    print_header "디렉토리 구조"
     
+    print_step "디렉토리 생성..."
     mkdir -p "$REPO_DIR"/{conf,db,dists,pool,incoming}
-    mkdir -p "$INCOMING_DIR"
     mkdir -p "$GPG_HOME"
     
     chmod 700 "$GPG_HOME"
-    
-    # 소유권 설정
     chown -R www-data:www-data "$REPO_BASE"
     
-    echo -e "${GREEN}✓${NC} 디렉토리 생성 완료"
-    echo "  저장소: $REPO_DIR"
-    echo "  수신함: $INCOMING_DIR"
+    print_success "디렉토리 생성 완료"
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# GPG 키 생성
+# GPG 키 설정
 # ═══════════════════════════════════════════════════════════════════════════════
 
 setup_gpg() {
-    print_header "GPG 키 설정"
+    print_header "GPG 서명 키 설정"
     
     export GNUPGHOME="$GPG_HOME"
     
     # 기존 키 확인
-    if gpg --list-keys "$GPG_EMAIL" &>/dev/null; then
-        echo -e "${YELLOW}!${NC} 기존 GPG 키 발견: $GPG_EMAIL"
-        GPG_KEY_ID=$(gpg --list-keys --keyid-format SHORT "$GPG_EMAIL" | grep -oP '(?<=rsa\d{4}\/)[A-F0-9]+')
-        echo "  Key ID: $GPG_KEY_ID"
-    else
-        echo "GPG 키 생성 중... (시간이 걸릴 수 있습니다)"
+    local need_new_key=false
+    
+    if gpg --list-keys 2>/dev/null | grep -q "$GPG_EMAIL"; then
+        print_success "기존 GPG 키 발견: $GPG_EMAIL"
+    elif gpg --list-keys 2>/dev/null | grep -q uid; then
+        # 다른 이메일의 키가 있음
+        local current_email
+        current_email=$(gpg --list-keys --with-colons 2>/dev/null | grep uid | head -1 | cut -d: -f10 | grep -oP '<\K[^>]+' || echo "unknown")
+        print_warning "다른 GPG 키 발견: $current_email"
         
-        # 배치 모드로 키 생성
-        cat > /tmp/gpg-batch << EOF
+        if prompt_yn "새 GPG 키를 생성하시겠습니까? (기존 키 삭제됨)" "y"; then
+            rm -rf "$GPG_HOME"/*
+            need_new_key=true
+        fi
+    else
+        need_new_key=true
+    fi
+    
+    if [[ "$need_new_key" == "true" ]]; then
+        create_gpg_key
+    fi
+    
+    # Key ID 추출
+    GPG_KEY_ID=$(gpg --list-keys --keyid-format SHORT 2>/dev/null | grep -E '^\s+[A-F0-9]+' | awk '{print $1}' | head -1)
+    
+    if [[ -z "$GPG_KEY_ID" ]]; then
+        GPG_KEY_ID=$(gpg --list-keys --keyid-format LONG 2>/dev/null | grep -oP '[A-F0-9]{16}' | head -1)
+        GPG_KEY_ID="${GPG_KEY_ID: -8}"
+    fi
+    
+    echo "  Key ID: $GPG_KEY_ID"
+    
+    # 공개키 내보내기
+    print_step "공개키 내보내기..."
+    gpg --armor --export > "$REPO_DIR/KEY.gpg"
+    gpg --export > "$REPO_DIR/KEY"
+    
+    export GPG_KEY_ID
+    
+    print_success "GPG 설정 완료"
+}
+
+create_gpg_key() {
+    print_step "새 GPG 키 생성 중... (시간이 걸릴 수 있습니다)"
+    
+    cat > /tmp/gpg-batch << EOF
 %echo Generating APT signing key
 Key-Type: RSA
 Key-Length: 4096
@@ -141,35 +394,16 @@ Subkey-Type: RSA
 Subkey-Length: 4096
 Name-Real: $GPG_NAME
 Name-Email: $GPG_EMAIL
-Expire-Date: $GPG_EXPIRE
+Expire-Date: 0
 %no-protection
 %commit
 %echo Done
 EOF
-        
-        gpg --batch --gen-key /tmp/gpg-batch
-        rm /tmp/gpg-batch
-        
-        GPG_KEY_ID=$(gpg --list-keys --keyid-format SHORT "$GPG_EMAIL" | grep -oP '(?<=rsa4096\/)[A-F0-9]+')
-        echo -e "${GREEN}✓${NC} GPG 키 생성 완료"
-        echo "  Key ID: $GPG_KEY_ID"
-    fi
     
-    # 공개키 내보내기
-    gpg --armor --export "$GPG_EMAIL" > "$REPO_DIR/KEY.gpg"
-    gpg --export "$GPG_EMAIL" > "$REPO_DIR/KEY"
+    gpg --batch --gen-key /tmp/gpg-batch 2>/dev/null
+    rm -f /tmp/gpg-batch
     
-    # 클라이언트용 스크립트 생성
-    cat > "$REPO_DIR/add-key.sh" << 'KEYEOF'
-#!/bin/bash
-# APT 저장소 GPG 키 추가
-curl -fsSL REPO_URL/KEY.gpg | sudo gpg --dearmor -o /usr/share/keyrings/internal-apt.gpg
-echo "GPG 키가 추가되었습니다."
-KEYEOF
-    sed -i "s|REPO_URL|https://$DOMAIN|g" "$REPO_DIR/add-key.sh"
-    chmod +x "$REPO_DIR/add-key.sh"
-    
-    echo -e "${GREEN}✓${NC} 공개키 내보내기 완료: $REPO_DIR/KEY.gpg"
+    print_success "GPG 키 생성 완료"
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -180,20 +414,19 @@ setup_reprepro() {
     print_header "reprepro 설정"
     
     export GNUPGHOME="$GPG_HOME"
-    GPG_KEY_ID=$(gpg --list-keys --keyid-format SHORT "$GPG_EMAIL" | grep -oP '(?<=rsa4096\/)[A-F0-9]+' | head -1)
     
-    # distributions 설정
+    print_step "distributions 설정 업데이트..."
     cat > "$REPO_DIR/conf/distributions" << EOF
 Origin: $REPO_NAME
 Label: $REPO_LABEL
 Codename: $REPO_CODENAME
 Architectures: $REPO_ARCH
-Components: $REPO_COMPONENTS
+Components: main
 Description: $REPO_LABEL
 SignWith: $GPG_KEY_ID
 EOF
 
-    # options 설정
+    print_step "options 설정 업데이트..."
     cat > "$REPO_DIR/conf/options" << EOF
 verbose
 basedir $REPO_DIR
@@ -201,22 +434,11 @@ gnupghome $GPG_HOME
 ask-passphrase
 EOF
 
-    # incoming 설정 (자동 처리용)
-    cat > "$REPO_DIR/conf/incoming" << EOF
-Name: default
-IncomingDir: $INCOMING_DIR
-TempDir: /tmp
-Allow: $REPO_CODENAME
-Cleanup: on_deny on_error
-EOF
-
-    echo -e "${GREEN}✓${NC} reprepro 설정 완료"
-    
-    # 초기화
+    print_step "저장소 초기화..."
     cd "$REPO_DIR"
-    reprepro export
+    reprepro export 2>/dev/null || true
     
-    echo -e "${GREEN}✓${NC} 저장소 초기화 완료"
+    print_success "reprepro 설정 완료"
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -227,57 +449,64 @@ setup_auth() {
     print_header "인증 설정"
     
     if [[ "$ENABLE_AUTH" != "true" ]]; then
-        echo -e "${YELLOW}!${NC} 인증 비활성화됨 (공개 저장소)"
+        print_warning "인증 비활성화 (공개 저장소)"
+        rm -f "$REPO_BASE/.htpasswd"
+        rm -f "$REPO_BASE/.credentials"
         return
     fi
     
-    # 비밀번호 자동 생성
-    if [[ -z "$AUTH_PASS" ]]; then
-        AUTH_PASS=$(openssl rand -base64 16 | tr -dc 'a-zA-Z0-9' | head -c 16)
-    fi
-    
-    # htpasswd 파일 생성
+    print_step "htpasswd 파일 생성/업데이트..."
     htpasswd -bc "$REPO_BASE/.htpasswd" "$AUTH_USER" "$AUTH_PASS"
     chmod 600 "$REPO_BASE/.htpasswd"
+    chown www-data:www-data "$REPO_BASE/.htpasswd"
     
-    echo -e "${GREEN}✓${NC} 인증 설정 완료"
-    echo ""
-    echo -e "${YELLOW}중요: 아래 정보를 안전하게 보관하세요${NC}"
-    echo "  사용자: $AUTH_USER"
-    echo "  비밀번호: $AUTH_PASS"
+    # Caddy용 해시 생성
+    print_step "Caddy 인증 해시 생성..."
+    CADDY_HASH=$(caddy hash-password --plaintext "$AUTH_PASS" 2>/dev/null || echo "")
     
-    # 인증 정보 파일 저장
+    print_step "인증 정보 저장..."
     cat > "$REPO_BASE/.credentials" << EOF
 # APT 저장소 인증 정보
-# 이 파일을 안전하게 보관하세요!
-
+# 생성일: $(date '+%Y-%m-%d %H:%M:%S')
 USER=$AUTH_USER
 PASS=$AUTH_PASS
 URL=https://$DOMAIN
-
-# 클라이언트 설정:
-# echo "machine $DOMAIN login $AUTH_USER password $AUTH_PASS" | sudo tee -a /etc/apt/auth.conf.d/internal.conf
-# sudo chmod 600 /etc/apt/auth.conf.d/internal.conf
 EOF
     chmod 600 "$REPO_BASE/.credentials"
+    
+    print_success "인증 설정 완료"
+    
+    echo ""
+    echo -e "${YELLOW}┌─────────────────────────────────────────────────────────┐${NC}"
+    echo -e "${YELLOW}│  인증 정보 (안전하게 보관하세요!)                       │${NC}"
+    echo -e "${YELLOW}├─────────────────────────────────────────────────────────┤${NC}"
+    printf "${YELLOW}│  사용자:   %-44s│${NC}\n" "$AUTH_USER"
+    printf "${YELLOW}│  비밀번호: %-44s│${NC}\n" "$AUTH_PASS"
+    echo -e "${YELLOW}└─────────────────────────────────────────────────────────┘${NC}"
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Caddy 웹 서버 설정
+# Caddy 설정
 # ═══════════════════════════════════════════════════════════════════════════════
 
 setup_caddy() {
-    print_header "Caddy 웹 서버 설정"
+    print_header "Caddy 웹서버 설정"
     
-    # Caddy 설정
-    if [[ "$ENABLE_AUTH" == "true" ]]; then
+    print_step "Caddy 설정 업데이트..."
+    
+    # Caddy 해시 (이미 생성되어 있거나 새로 생성)
+    if [[ -z "$CADDY_HASH" ]] && [[ "$ENABLE_AUTH" == "true" ]]; then
+        CADDY_HASH=$(caddy hash-password --plaintext "$AUTH_PASS" 2>/dev/null || echo "")
+    fi
+    
+    if [[ "$ENABLE_AUTH" == "true" ]] && [[ -n "$CADDY_HASH" ]]; then
         cat > /etc/caddy/Caddyfile << EOF
 $DOMAIN {
     root * $REPO_DIR
     
     # 공개 파일 (GPG 키, 설치 스크립트)
     @public {
-        path /KEY.gpg /KEY /add-key.sh /index.html
+        path /KEY.gpg /KEY /add-key.sh /setup-client.sh /index.html
     }
     handle @public {
         file_server
@@ -285,13 +514,12 @@ $DOMAIN {
     
     # 나머지는 인증 필요
     handle {
-        basic_auth {
-            $AUTH_USER $(caddy hash-password --plaintext "$AUTH_PASS")
+        basicauth {
+            $AUTH_USER $CADDY_HASH
         }
         file_server browse
     }
     
-    # 로그
     log {
         output file /var/log/caddy/apt-access.log
     }
@@ -310,14 +538,21 @@ $DOMAIN {
 EOF
     fi
     
-    # 로그 디렉토리
+    # 로그 디렉토리 생성
     mkdir -p /var/log/caddy
+    chown caddy:caddy /var/log/caddy
     
-    # Caddy 재시작
+    print_step "Caddy 테스트 및 재시작..."
+    caddy validate --config /etc/caddy/Caddyfile 2>/dev/null || {
+        print_error "Caddy 설정 오류"
+        cat /etc/caddy/Caddyfile
+        exit 1
+    }
+    
     systemctl enable caddy
     systemctl restart caddy
     
-    echo -e "${GREEN}✓${NC} Caddy 설정 완료"
+    print_success "Caddy 설정 완료 (자동 HTTPS)"
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -325,58 +560,51 @@ EOF
 # ═══════════════════════════════════════════════════════════════════════════════
 
 create_management_scripts() {
-    print_header "관리 스크립트 생성"
+    print_header "관리 스크립트"
     
-    # apt-repo-add: 패키지 추가
+    print_step "apt-repo-add 생성..."
     cat > /usr/local/bin/apt-repo-add << 'EOF'
 #!/bin/bash
-# APT 저장소에 패키지 추가
-# 사용법: apt-repo-add <package.deb> [codename]
-
 set -e
-
 REPO_DIR="/var/www/apt/repo"
 GNUPGHOME="/var/www/apt/.gnupg"
 export GNUPGHOME
 
+source /var/www/apt/.config 2>/dev/null || true
+CODENAME="${REPO_CODENAME:-stable}"
+
 DEB_FILE="$1"
-CODENAME="${2:-stable}"
+TARGET_CODENAME="${2:-$CODENAME}"
 
 if [[ -z "$DEB_FILE" ]] || [[ ! -f "$DEB_FILE" ]]; then
     echo "사용법: apt-repo-add <package.deb> [codename]"
+    echo "현재 코드네임: $CODENAME"
     exit 1
 fi
 
-cd "$REPO_DIR"
-
-# 패키지 정보 출력
-echo "패키지 추가 중: $DEB_FILE"
+echo "패키지 추가: $DEB_FILE → $TARGET_CODENAME"
 dpkg-deb --info "$DEB_FILE" | grep -E '^ (Package|Version|Architecture):'
 
-# reprepro로 추가
-reprepro includedeb "$CODENAME" "$DEB_FILE"
+cd "$REPO_DIR"
+reprepro includedeb "$TARGET_CODENAME" "$DEB_FILE"
 
-echo "✓ 패키지 추가 완료"
-echo ""
-echo "클라이언트에서 업데이트:"
-echo "  sudo apt update"
+echo "✓ 완료"
 EOF
     chmod +x /usr/local/bin/apt-repo-add
     
-    # apt-repo-remove: 패키지 제거
+    print_step "apt-repo-remove 생성..."
     cat > /usr/local/bin/apt-repo-remove << 'EOF'
 #!/bin/bash
-# APT 저장소에서 패키지 제거
-# 사용법: apt-repo-remove <package-name> [codename]
-
 set -e
-
 REPO_DIR="/var/www/apt/repo"
 GNUPGHOME="/var/www/apt/.gnupg"
 export GNUPGHOME
 
+source /var/www/apt/.config 2>/dev/null || true
+CODENAME="${REPO_CODENAME:-stable}"
+
 PACKAGE="$1"
-CODENAME="${2:-stable}"
+TARGET_CODENAME="${2:-$CODENAME}"
 
 if [[ -z "$PACKAGE" ]]; then
     echo "사용법: apt-repo-remove <package-name> [codename]"
@@ -384,211 +612,210 @@ if [[ -z "$PACKAGE" ]]; then
 fi
 
 cd "$REPO_DIR"
-reprepro remove "$CODENAME" "$PACKAGE"
-
-echo "✓ 패키지 제거 완료: $PACKAGE"
+reprepro remove "$TARGET_CODENAME" "$PACKAGE"
+echo "✓ 제거 완료: $PACKAGE"
 EOF
     chmod +x /usr/local/bin/apt-repo-remove
     
-    # apt-repo-list: 패키지 목록
+    print_step "apt-repo-list 생성..."
     cat > /usr/local/bin/apt-repo-list << 'EOF'
 #!/bin/bash
-# APT 저장소 패키지 목록
-# 사용법: apt-repo-list [codename]
-
 REPO_DIR="/var/www/apt/repo"
 GNUPGHOME="/var/www/apt/.gnupg"
 export GNUPGHOME
 
-CODENAME="${1:-stable}"
+source /var/www/apt/.config 2>/dev/null || true
+CODENAME="${REPO_CODENAME:-stable}"
 
 cd "$REPO_DIR"
-reprepro list "$CODENAME"
+reprepro list "${1:-$CODENAME}"
 EOF
     chmod +x /usr/local/bin/apt-repo-list
     
-    # apt-repo-info: 저장소 정보
+    print_step "apt-repo-info 생성..."
     cat > /usr/local/bin/apt-repo-info << 'EOF'
 #!/bin/bash
-# APT 저장소 정보
+source /var/www/apt/.config 2>/dev/null || {
+    echo "설정 파일이 없습니다: /var/www/apt/.config"
+    exit 1
+}
 
-REPO_DIR="/var/www/apt/repo"
-
-echo "═══════════════════════════════════════════════════════════"
-echo "  APT Repository Information"
-echo "═══════════════════════════════════════════════════════════"
 echo ""
-echo "저장소 경로: $REPO_DIR"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  APT 저장소 정보"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
-echo "배포판:"
-cat "$REPO_DIR/conf/distributions"
+echo "  URL:        https://$DOMAIN"
+echo "  저장소:     /var/www/apt/repo"
+echo "  코드네임:   $REPO_CODENAME"
+echo "  웹서버:     Caddy (자동 HTTPS)"
 echo ""
-echo "등록된 패키지:"
-apt-repo-list 2>/dev/null || echo "  (없음)"
+if [[ "$ENABLE_AUTH" == "true" ]]; then
+    echo "  인증:       활성화"
+    echo "  사용자:     $AUTH_USER"
+    echo "  비밀번호:   $AUTH_PASS"
+    echo ""
+fi
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  패키지 목록"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+apt-repo-list
 echo ""
-echo "디스크 사용량:"
-du -sh "$REPO_DIR/pool" 2>/dev/null || echo "  0"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  클라이언트 설정 명령어"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+if [[ "$ENABLE_AUTH" == "true" ]]; then
+    echo ""
+    echo "  curl -fsSL https://$DOMAIN/setup-client.sh | sudo bash -s -- $AUTH_USER '$AUTH_PASS'"
+else
+    echo ""
+    echo "  curl -fsSL https://$DOMAIN/setup-client.sh | sudo bash"
+fi
+echo ""
 EOF
     chmod +x /usr/local/bin/apt-repo-info
     
-    echo -e "${GREEN}✓${NC} 관리 스크립트 생성 완료"
-    echo ""
-    echo "사용 가능한 명령어:"
-    echo "  apt-repo-add <package.deb>    # 패키지 추가"
-    echo "  apt-repo-remove <name>        # 패키지 제거"
-    echo "  apt-repo-list                 # 패키지 목록"
-    echo "  apt-repo-info                 # 저장소 정보"
+    print_success "관리 스크립트 생성 완료"
+    echo "  apt-repo-add / apt-repo-remove / apt-repo-list / apt-repo-info"
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 클라이언트 설정 스크립트 생성
+# 클라이언트 스크립트 생성
 # ═══════════════════════════════════════════════════════════════════════════════
 
-create_client_script() {
-    print_header "클라이언트 설정 스크립트 생성"
+create_client_scripts() {
+    print_header "클라이언트 스크립트"
     
-    cat > "$REPO_DIR/setup-client.sh" << 'CLIENTEOF'
+    print_step "setup-client.sh 생성..."
+    cat > "$REPO_DIR/setup-client.sh" << CLIENTEOF
 #!/bin/bash
-#===============================================================================
-# APT 저장소 클라이언트 설정
-# 
-# 사용법:
-#   curl -fsSL https://DOMAIN/setup-client.sh | sudo bash
-#   # 또는 인증이 필요한 경우
-#   curl -fsSL -u USER:PASS https://DOMAIN/setup-client.sh | sudo bash -s -- USER PASS
-#===============================================================================
-
 set -e
 
-DOMAIN="DOMAIN_PLACEHOLDER"
-AUTH_USER="${1:-}"
-AUTH_PASS="${2:-}"
-CODENAME="CODENAME_PLACEHOLDER"
+DOMAIN="$DOMAIN"
+AUTH_USER="\${1:-}"
+AUTH_PASS="\${2:-}"
+CODENAME="$REPO_CODENAME"
 
-echo "APT 저장소 클라이언트 설정 중..."
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  APT 저장소 클라이언트 설정"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+echo "  도메인:   \$DOMAIN"
+echo "  코드네임: \$CODENAME"
+echo ""
 
-# GPG 키 추가
+# 1. GPG 키 추가
 echo "1. GPG 키 추가..."
-if [[ -n "$AUTH_USER" ]]; then
-    curl -fsSL -u "$AUTH_USER:$AUTH_PASS" "https://$DOMAIN/KEY.gpg" | \
+rm -f /usr/share/keyrings/internal-apt.gpg
+if [[ -n "\$AUTH_USER" ]]; then
+    curl -fsSL -u "\$AUTH_USER:\$AUTH_PASS" "https://\$DOMAIN/KEY.gpg" | \\
         gpg --dearmor -o /usr/share/keyrings/internal-apt.gpg
 else
-    curl -fsSL "https://$DOMAIN/KEY.gpg" | \
+    curl -fsSL "https://\$DOMAIN/KEY.gpg" | \\
         gpg --dearmor -o /usr/share/keyrings/internal-apt.gpg
 fi
+echo "   ✓ GPG 키 설치됨"
 
-# 인증 설정 (필요한 경우)
-if [[ -n "$AUTH_USER" ]]; then
+# 2. 인증 설정
+if [[ -n "\$AUTH_USER" ]]; then
     echo "2. 인증 설정..."
     mkdir -p /etc/apt/auth.conf.d
-    cat > /etc/apt/auth.conf.d/internal.conf << EOF
-machine $DOMAIN
-login $AUTH_USER
-password $AUTH_PASS
-EOF
+    cat > /etc/apt/auth.conf.d/internal.conf << AUTHEOF
+machine \$DOMAIN
+login \$AUTH_USER
+password \$AUTH_PASS
+AUTHEOF
     chmod 600 /etc/apt/auth.conf.d/internal.conf
+    echo "   ✓ 인증 설정됨"
 fi
 
-# sources.list 추가
+# 3. APT 소스 추가
 echo "3. APT 소스 추가..."
-cat > /etc/apt/sources.list.d/internal.list << EOF
-deb [signed-by=/usr/share/keyrings/internal-apt.gpg] https://$DOMAIN $CODENAME main
-EOF
+cat > /etc/apt/sources.list.d/internal.list << SRCEOF
+deb [signed-by=/usr/share/keyrings/internal-apt.gpg] https://\$DOMAIN \$CODENAME main
+SRCEOF
+echo "   ✓ APT 소스 추가됨"
 
-# 업데이트
-echo "4. 패키지 목록 업데이트..."
-apt-get update
+# 4. 업데이트
+echo "4. APT 업데이트..."
+apt-get update -qq
 
 echo ""
-echo "✓ 설정 완료!"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  ✓ 설정 완료!"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
-echo "사용 예:"
-echo "  sudo apt install vaultctl"
-echo "  sudo apt update && sudo apt upgrade"
+echo "  설치 예시:"
+echo "    sudo apt install vaultctl"
+echo ""
 CLIENTEOF
-
-    # placeholder 교체
-    sed -i "s/DOMAIN_PLACEHOLDER/$DOMAIN/g" "$REPO_DIR/setup-client.sh"
-    sed -i "s/CODENAME_PLACEHOLDER/$REPO_CODENAME/g" "$REPO_DIR/setup-client.sh"
     chmod +x "$REPO_DIR/setup-client.sh"
     
-    echo -e "${GREEN}✓${NC} 클라이언트 스크립트 생성: $REPO_DIR/setup-client.sh"
-}
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# 랜딩 페이지 생성
-# ═══════════════════════════════════════════════════════════════════════════════
-
-create_landing_page() {
-    cat > "$REPO_DIR/index.html" << 'HTMLEOF'
+    print_step "index.html 생성..."
+    cat > "$REPO_DIR/index.html" << EOF
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Internal APT Repository</title>
+    <title>APT Repository - $DOMAIN</title>
     <style>
-        :root { --bg: #1a1a2e; --fg: #eaeaea; --accent: #00d9ff; --code-bg: #16213e; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
-               background: var(--bg); color: var(--fg); max-width: 800px; margin: 0 auto; padding: 40px 20px; }
-        h1 { color: var(--accent); }
-        h2 { border-bottom: 1px solid #333; padding-bottom: 8px; margin-top: 32px; }
-        pre { background: var(--code-bg); padding: 16px; border-radius: 8px; overflow-x: auto; 
-              border: 1px solid #333; }
-        code { font-family: 'SF Mono', Monaco, 'Consolas', monospace; font-size: 14px; }
-        a { color: var(--accent); }
-        .badge { display: inline-block; background: #00d97e; color: #1a1a2e; padding: 4px 12px; 
-                 border-radius: 4px; font-size: 12px; font-weight: 600; margin-left: 8px; }
-        .warning { background: #3d2914; border-left: 4px solid #ff9500; padding: 12px 16px; 
-                   border-radius: 0 8px 8px 0; margin: 16px 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 40px; background: #f5f5f5; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        h1 { color: #333; border-bottom: 2px solid #0066cc; padding-bottom: 10px; }
+        h2 { color: #555; margin-top: 30px; }
+        a { color: #0066cc; }
+        code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-size: 14px; }
+        pre { background: #2d2d2d; color: #f8f8f2; padding: 15px; border-radius: 5px; overflow-x: auto; }
+        .info { background: #e7f3ff; border-left: 4px solid #0066cc; padding: 10px 15px; margin: 20px 0; }
+        .secure { background: #e8f5e9; border-left: 4px solid #4caf50; padding: 10px 15px; margin: 20px 0; }
     </style>
 </head>
 <body>
-    <h1>🔐 Internal APT Repository <span class="badge">Private</span></h1>
-    <p>내부 패키지 배포를 위한 APT 저장소입니다.</p>
-    
-    <h2>🚀 Quick Setup</h2>
-    <pre><code>curl -fsSL https://DOMAIN/setup-client.sh | sudo bash -s -- USERNAME PASSWORD</code></pre>
-    
-    <div class="warning">
-        <strong>⚠️ 인증 필요</strong><br>
-        이 저장소는 인증이 필요합니다. 관리자에게 자격 증명을 요청하세요.
-    </div>
-    
-    <h2>📦 Manual Setup</h2>
-    <pre><code># 1. GPG 키 추가
-curl -fsSL -u USER:PASS https://DOMAIN/KEY.gpg | \
+    <div class="container">
+        <h1>🗄️ Internal APT Repository</h1>
+        
+        <p><a href="/KEY.gpg">📜 GPG Key</a> | <a href="/setup-client.sh">📥 Setup Script</a></p>
+        
+        <div class="info">
+            <strong>도메인:</strong> $DOMAIN<br>
+            <strong>코드네임:</strong> $REPO_CODENAME
+        </div>
+        
+        <div class="secure">
+            🔒 <strong>HTTPS 자동 활성화</strong> - Caddy + Let's Encrypt
+        </div>
+        
+        <h2>Quick Setup</h2>
+        <pre>curl -fsSL https://$DOMAIN/setup-client.sh | sudo bash -s -- USER PASSWORD</pre>
+        
+        <h2>Manual Setup</h2>
+        <pre>
+# 1. GPG 키 추가
+curl -fsSL -u USER:PASS https://$DOMAIN/KEY.gpg | \\
     sudo gpg --dearmor -o /usr/share/keyrings/internal-apt.gpg
 
 # 2. 인증 설정
-echo "machine DOMAIN login USER password PASS" | \
+echo "machine $DOMAIN login USER password PASS" | \\
     sudo tee /etc/apt/auth.conf.d/internal.conf
 sudo chmod 600 /etc/apt/auth.conf.d/internal.conf
 
-# 3. 저장소 추가
-echo "deb [signed-by=/usr/share/keyrings/internal-apt.gpg] https://DOMAIN stable main" | \
+# 3. APT 소스 추가
+echo "deb [signed-by=/usr/share/keyrings/internal-apt.gpg] https://$DOMAIN $REPO_CODENAME main" | \\
     sudo tee /etc/apt/sources.list.d/internal.list
 
 # 4. 설치
 sudo apt update
-sudo apt install vaultctl</code></pre>
-    
-    <h2>📋 Available Packages</h2>
-    <p>등록된 패키지 목록은 인증 후 확인할 수 있습니다.</p>
-    <pre><code>apt-cache search --names-only '.*' 2>/dev/null | grep -v "^lib"</code></pre>
-    
-    <h2>🔗 Files</h2>
-    <ul>
-        <li><a href="/KEY.gpg">GPG Public Key (ASCII)</a></li>
-        <li><a href="/setup-client.sh">Client Setup Script</a></li>
-    </ul>
+sudo apt install vaultctl
+        </pre>
+    </div>
 </body>
 </html>
-HTMLEOF
-
-    sed -i "s/DOMAIN/$DOMAIN/g" "$REPO_DIR/index.html"
+EOF
     
-    echo -e "${GREEN}✓${NC} 랜딩 페이지 생성"
+    # 파일 권한 설정
+    chown -R www-data:www-data "$REPO_DIR"
+    
+    print_success "클라이언트 스크립트 생성 완료"
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -596,47 +823,50 @@ HTMLEOF
 # ═══════════════════════════════════════════════════════════════════════════════
 
 print_summary() {
-    print_header "설치 완료!"
+    print_header "설치 완료"
     
-    echo "APT 저장소가 성공적으로 구축되었습니다."
-    echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "  저장소 정보"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
     echo "  URL:        https://$DOMAIN"
     echo "  저장소:     $REPO_DIR"
-    echo "  GPG Home:   $GPG_HOME"
+    echo "  코드네임:   $REPO_CODENAME"
+    echo "  웹서버:     Caddy (자동 HTTPS)"
     echo ""
     
     if [[ "$ENABLE_AUTH" == "true" ]]; then
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo "  인증 정보 (안전하게 보관하세요!)"
+        echo "  인증 정보"
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo ""
         echo "  사용자:     $AUTH_USER"
         echo "  비밀번호:   $AUTH_PASS"
         echo ""
-        echo "  저장된 위치: $REPO_BASE/.credentials"
-        echo ""
     fi
     
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  사용 방법"
+    echo "  다음 단계"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
-    echo "  패키지 추가:"
-    echo "    apt-repo-add vaultctl_0.1.0_amd64.deb"
+    echo "  1. DNS 설정 확인:"
+    echo "     $DOMAIN → 이 서버 IP"
     echo ""
-    echo "  패키지 목록:"
-    echo "    apt-repo-list"
+    echo "  2. 패키지 추가:"
+    echo "     apt-repo-add vaultctl_0.1.0_amd64.deb"
     echo ""
-    echo "  클라이언트 설정:"
+    echo "  3. 클라이언트 설정:"
     if [[ "$ENABLE_AUTH" == "true" ]]; then
-        echo "    curl -fsSL https://$DOMAIN/setup-client.sh | sudo bash -s -- $AUTH_USER $AUTH_PASS"
+        echo "     curl -fsSL https://$DOMAIN/setup-client.sh | sudo bash -s -- $AUTH_USER '$AUTH_PASS'"
     else
-        echo "    curl -fsSL https://$DOMAIN/setup-client.sh | sudo bash"
+        echo "     curl -fsSL https://$DOMAIN/setup-client.sh | sudo bash"
     fi
+    echo ""
+    echo "  4. 저장소 정보 확인:"
+    echo "     apt-repo-info"
+    echo ""
+    echo "  5. HTTPS 인증서 확인 (몇 분 후):"
+    echo "     curl -I https://$DOMAIN"
     echo ""
 }
 
@@ -645,24 +875,52 @@ print_summary() {
 # ═══════════════════════════════════════════════════════════════════════════════
 
 main() {
-    # root 확인
     if [[ $EUID -ne 0 ]]; then
-        echo -e "${RED}✗ root 권한이 필요합니다.${NC}"
+        print_error "root 권한이 필요합니다."
+        echo "  sudo $0"
         exit 1
     fi
     
-    print_header "개인 APT 저장소 구축"
+    echo ""
+    echo -e "${BOLD}╔═══════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${BOLD}║     APT 저장소 서버 설치 (Caddy 자동 HTTPS)               ║${NC}"
+    echo -e "${BOLD}╚═══════════════════════════════════════════════════════════╝${NC}"
+    echo ""
     
-    install_packages
-    setup_directories
-    setup_gpg
-    setup_reprepro
-    setup_auth
-    setup_caddy
-    create_management_scripts
-    create_client_script
-    create_landing_page
-    print_summary
+    # 재설정 모드 확인
+    local reconfigure_only=false
+    if [[ "$1" == "--reconfigure" ]] || [[ "$1" == "-r" ]]; then
+        reconfigure_only=true
+        if [[ ! -d "$REPO_DIR" ]]; then
+            print_error "APT 저장소가 설치되지 않았습니다. 전체 설치를 진행하세요."
+            exit 1
+        fi
+        echo -e "${YELLOW}재설정 모드: 설정만 업데이트합니다.${NC}"
+        echo ""
+    fi
+    
+    # 대화형 설정
+    interactive_config
+    
+    if [[ "$reconfigure_only" == "true" ]]; then
+        save_config
+        setup_reprepro
+        setup_auth
+        setup_caddy
+        create_client_scripts
+        print_summary
+    else
+        install_packages
+        setup_directories
+        setup_gpg
+        save_config
+        setup_reprepro
+        setup_auth
+        setup_caddy
+        create_management_scripts
+        create_client_scripts
+        print_summary
+    fi
 }
 
 main "$@"
