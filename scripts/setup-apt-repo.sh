@@ -126,7 +126,7 @@ cmd_sign() {
     gpg --default-key "$gpg_key" -abs -o "dists/$CODENAME/Release.gpg" "dists/$CODENAME/Release"
     
     # 공개키 내보내기
-    gpg --armor --export "$gpg_key" > "$REPO_DIR/KEY.gpg"
+    gpg --armor --export "$gpg_key" > "$REPO_DIR/key.gpg"
     
     echo -e "${GREEN}✓${NC} GPG 서명 완료"
 }
@@ -152,7 +152,7 @@ deb [trusted=yes] $repo_url $CODENAME $COMPONENT
 EOF
 
     # 또는 signed repository인 경우
-    # curl -fsSL $repo_url/KEY.gpg | sudo gpg --dearmor -o /usr/share/keyrings/vaultctl.gpg
+    # curl -fsSL $repo_url/key.gpg | sudo gpg --dearmor -o /usr/share/keyrings/vaultctl.gpg
     # echo "deb [signed-by=/usr/share/keyrings/vaultctl.gpg] $repo_url $CODENAME $COMPONENT" | sudo tee /etc/apt/sources.list.d/vaultctl.list
 
     sudo apt-get update

@@ -373,8 +373,8 @@ setup_gpg() {
     
     # 공개키 내보내기
     print_step "공개키 내보내기..."
-    gpg --armor --export > "$REPO_DIR/KEY.gpg"
-    gpg --export > "$REPO_DIR/KEY"
+    gpg --armor --export > "$REPO_DIR/key.gpg"
+    gpg --export > "$REPO_DIR/key"
     
     export GPG_KEY_ID
     
@@ -690,29 +690,29 @@ AUTH_PASS="\${2:-}"
 CODENAME="$REPO_CODENAME"
 
 echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  APT 저장소 클라이언트 설정"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "============================================================"
+echo "  APT Repository Client Setup"
+echo "============================================================"
 echo ""
-echo "  도메인:   \$DOMAIN"
-echo "  코드네임: \$CODENAME"
+echo "  Domain:   \$DOMAIN"
+echo "  Codename: \$CODENAME"
 echo ""
 
-# 1. GPG 키 추가
-echo "1. GPG 키 추가..."
+# 1. Add GPG key
+echo "[1/4] Adding GPG key..."
 rm -f /usr/share/keyrings/internal-apt.gpg
 if [[ -n "\$AUTH_USER" ]]; then
-    curl -fsSL -u "\$AUTH_USER:\$AUTH_PASS" "https://\$DOMAIN/KEY.gpg" | \\
+    curl -fsSL -u "\$AUTH_USER:\$AUTH_PASS" "https://\$DOMAIN/key.gpg" | \\
         gpg --dearmor -o /usr/share/keyrings/internal-apt.gpg
 else
-    curl -fsSL "https://\$DOMAIN/KEY.gpg" | \\
+    curl -fsSL "https://\$DOMAIN/key.gpg" | \\
         gpg --dearmor -o /usr/share/keyrings/internal-apt.gpg
 fi
-echo "   ✓ GPG 키 설치됨"
+echo "      Done"
 
-# 2. 인증 설정
+# 2. Configure authentication
 if [[ -n "\$AUTH_USER" ]]; then
-    echo "2. 인증 설정..."
+    echo "[2/4] Configuring authentication..."
     mkdir -p /etc/apt/auth.conf.d
     cat > /etc/apt/auth.conf.d/internal.conf << AUTHEOF
 machine \$DOMAIN
@@ -720,88 +720,106 @@ login \$AUTH_USER
 password \$AUTH_PASS
 AUTHEOF
     chmod 600 /etc/apt/auth.conf.d/internal.conf
-    echo "   ✓ 인증 설정됨"
+    echo "      Done"
+else
+    echo "[2/4] Skipping authentication (public repo)"
 fi
 
-# 3. APT 소스 추가
-echo "3. APT 소스 추가..."
+# 3. Add APT source
+echo "[3/4] Adding APT source..."
 cat > /etc/apt/sources.list.d/internal.list << SRCEOF
 deb [signed-by=/usr/share/keyrings/internal-apt.gpg] https://\$DOMAIN \$CODENAME main
 SRCEOF
-echo "   ✓ APT 소스 추가됨"
+echo "      Done"
 
-# 4. 업데이트
-echo "4. APT 업데이트..."
+# 4. Update package list
+echo "[4/4] Updating package list..."
 apt-get update -qq
 
 echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  ✓ 설정 완료!"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "============================================================"
+echo "  Setup Complete!"
+echo "============================================================"
 echo ""
-echo "  설치 가능한 패키지 확인:"
-echo "    apt-cache search --names-only '.*' 2>/dev/null | head -10"
-echo ""
-echo "  설치 예시:"
+echo "  Install packages with:"
 echo "    sudo apt install vaultctl"
 echo ""
 CLIENTEOF
     chmod +x "$REPO_DIR/setup-client.sh"
     
     print_step "index.html 생성..."
-    cat > "$REPO_DIR/index.html" << EOF
+    
+    # 템플릿 파일 경로 (스크립트와 같은 위치 또는 templates 디렉토리)
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    TEMPLATE_FILE=""
+    
+    # 템플릿 파일 찾기
+    for path in "$SCRIPT_DIR/../templates/index.html" "$SCRIPT_DIR/templates/index.html" "/opt/vaultctl/templates/index.html"; do
+        if [[ -f "$path" ]]; then
+            TEMPLATE_FILE="$path"
+            break
+        fi
+    done
+    
+    if [[ -n "$TEMPLATE_FILE" ]]; then
+        # 템플릿 복사 후 플레이스홀더 치환
+        cp "$TEMPLATE_FILE" "$REPO_DIR/index.html"
+        sed -i "s|__DOMAIN__|$DOMAIN|g" "$REPO_DIR/index.html"
+        sed -i "s|__CODENAME__|$REPO_CODENAME|g" "$REPO_DIR/index.html"
+    else
+        # 템플릿이 없으면 기본 HTML 생성 (영문)
+        cat > "$REPO_DIR/index.html" << 'HTMLEOF'
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>APT Repository - $DOMAIN</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>APT Repository</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 40px; background: #f5f5f5; }
         .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        h1 { color: #333; border-bottom: 2px solid #0066cc; padding-bottom: 10px; }
+        h1 { color: #333; border-bottom: 2px solid #667eea; padding-bottom: 10px; }
         h2 { color: #555; margin-top: 30px; }
-        a { color: #0066cc; }
-        code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-size: 14px; }
-        pre { background: #2d2d2d; color: #f8f8f2; padding: 15px; border-radius: 5px; overflow-x: auto; }
-        .info { background: #e7f3ff; border-left: 4px solid #0066cc; padding: 10px 15px; margin: 20px 0; }
+        a { color: #667eea; }
+        code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; }
+        pre { background: #1e1e2e; color: #cdd6f4; padding: 15px; border-radius: 8px; overflow-x: auto; }
+        .info { background: #e0e7ff; border-left: 4px solid #667eea; padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 20px 0; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🗄️ Internal APT Repository</h1>
-        
-        <p><a href="/KEY.gpg">📜 GPG Key</a> | <a href="/setup-client.sh">📥 Setup Script</a></p>
-        
+        <h1>Internal APT Repository</h1>
+        <p><a href="/key.gpg">GPG Key</a> | <a href="/setup-client.sh">Setup Script</a></p>
         <div class="info">
-            <strong>도메인:</strong> $DOMAIN<br>
-            <strong>코드네임:</strong> $REPO_CODENAME
+            <strong>Domain:</strong> DOMAIN_PLACEHOLDER<br>
+            <strong>Codename:</strong> CODENAME_PLACEHOLDER
         </div>
-        
         <h2>Quick Setup</h2>
-        <pre>curl -fsSL https://$DOMAIN/setup-client.sh | sudo bash -s -- USER PASSWORD</pre>
-        
+        <pre>curl -fsSL https://DOMAIN_PLACEHOLDER/setup-client.sh | sudo bash -s -- USER PASSWORD</pre>
         <h2>Manual Setup</h2>
-        <pre>
-# 1. GPG 키 추가
-curl -fsSL -u USER:PASS https://$DOMAIN/KEY.gpg | \\
+        <pre># 1. Add GPG key
+curl -fsSL -u USER:PASS https://DOMAIN_PLACEHOLDER/key.gpg | \
     sudo gpg --dearmor -o /usr/share/keyrings/internal-apt.gpg
 
-# 2. 인증 설정
-echo "machine $DOMAIN login USER password PASS" | \\
+# 2. Configure auth
+echo "machine DOMAIN_PLACEHOLDER login USER password PASS" | \
     sudo tee /etc/apt/auth.conf.d/internal.conf
 sudo chmod 600 /etc/apt/auth.conf.d/internal.conf
 
-# 3. APT 소스 추가
-echo "deb [signed-by=/usr/share/keyrings/internal-apt.gpg] https://$DOMAIN $REPO_CODENAME main" | \\
+# 3. Add APT source
+echo "deb [signed-by=/usr/share/keyrings/internal-apt.gpg] https://DOMAIN_PLACEHOLDER CODENAME_PLACEHOLDER main" | \
     sudo tee /etc/apt/sources.list.d/internal.list
 
-# 4. 설치
+# 4. Install
 sudo apt update
-sudo apt install vaultctl
-        </pre>
+sudo apt install vaultctl</pre>
     </div>
 </body>
 </html>
-EOF
+HTMLEOF
+        sed -i "s|DOMAIN_PLACEHOLDER|$DOMAIN|g" "$REPO_DIR/index.html"
+        sed -i "s|CODENAME_PLACEHOLDER|$REPO_CODENAME|g" "$REPO_DIR/index.html"
+    fi
     
     # 파일 권한 설정
     chown -R www-data:www-data "$REPO_DIR"

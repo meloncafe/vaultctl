@@ -121,7 +121,7 @@ sudo apt update && sudo apt upgrade vaultctl
 
 ```bash
 # 1. GPG 키 추가
-curl -fsSL -u apt:PASSWORD https://apt.example.com/KEY.gpg | \
+curl -fsSL -u apt:PASSWORD https://apt.example.com/key.gpg | \
     sudo gpg --dearmor -o /usr/share/keyrings/internal-apt.gpg
 
 # 2. 인증 설정 (프라이빗 저장소인 경우)
@@ -877,7 +877,7 @@ sudo nano /etc/vaultctl/env  # 토큰 직접 업데이트
 ```bash
 # GPG 키 문제
 sudo rm /usr/share/keyrings/internal-apt.gpg
-curl -fsSL -u apt:PASS https://apt.example.com/KEY.gpg | \
+curl -fsSL -u apt:PASS https://apt.example.com/key.gpg | \
     sudo gpg --dearmor -o /usr/share/keyrings/internal-apt.gpg
 
 # 인증 문제
