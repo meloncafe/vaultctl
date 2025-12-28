@@ -23,6 +23,7 @@ A CLI tool for centrally managing Proxmox LXC container passwords/URLs and Docke
   - [vaultctl redact](#vaultctl-redact---log-redaction)
   - [vaultctl watch](#vaultctl-watch---secret-change-detection)
 - [APT Server Setup](#apt-server-setup)
+  - [GitHub Release Sync](#github-release-sync-repo-sync)
 - [Package Build and Deployment](#package-build-and-deployment)
 - [Update Flow](#update-flow)
 - [Security Notes](#security-notes)
@@ -43,6 +44,7 @@ A CLI tool for centrally managing Proxmox LXC container passwords/URLs and Docke
 - 🔎 **Secret Scanning**: Search for hardcoded secrets in code (DevSecOps)
 - 🛡️ **Log Masking**: Automatic secret redaction in output/logs
 - 👁️ **Change Detection**: Auto-restart on Vault secret changes (`vaultctl watch`)
+- 🔗 **GitHub Release Sync**: Auto-deploy latest version from GitHub (`vaultctl repo sync`)
 
 ---
 
@@ -783,6 +785,50 @@ vaultctl repo check
 vaultctl repo clean
 ```
 
+### GitHub Release Sync (repo sync)
+
+Automatically fetch the latest version from GitHub releases and deploy to APT repository.
+
+**Prerequisites:**
+- GitHub CLI (`gh`) installed and authenticated: `gh auth login`
+
+```bash
+# Configure GitHub repository (one-time)
+vaultctl repo config --github-repo owner/repo
+vaultctl repo config -g harmonys-app/vaultctl
+
+# Check current configuration
+vaultctl repo config
+
+# Check for and deploy latest release
+vaultctl repo sync
+
+# Check for updates only (don't deploy)
+vaultctl repo sync --check
+
+# Force deploy (even if same version)
+vaultctl repo sync --force
+```
+
+**Example output:**
+```
+$ vaultctl repo sync
+Checking GitHub releases...
+  Repository: harmonys-app/vaultctl
+  Latest release: v0.2.0 (v0.2.0)
+  Published: 2025-01-15
+  Current version: 0.1.0
+
+Downloading release v0.2.0...
+  Downloaded: vaultctl_0.2.0_amd64.deb
+
+Deploying to APT repository...
+✓ Successfully deployed vaultctl_0.2.0_amd64.deb
+
+  Clients can update with:
+    sudo apt update && sudo apt upgrade vaultctl
+```
+
 ### Legacy Commands (Compatibility)
 
 Previous script-style commands still work:
@@ -919,7 +965,31 @@ sudo apt update
 sudo apt upgrade vaultctl
 ```
 
-### Scenario 3: Emergency Patch
+### Scenario 3: GitHub Release Sync (repo sync)
+
+Automatically fetch and deploy GitHub releases from the APT server.
+
+```bash
+# On APT server (one-time setup)
+vaultctl repo config -g harmonys-app/vaultctl
+
+# Check for latest version
+vaultctl repo sync --check
+
+# Deploy
+vaultctl repo sync
+
+# On each LXC
+sudo apt update
+sudo apt upgrade vaultctl
+```
+
+**Benefits:**
+- No need to SCP files from dev machine
+- Single command deployment after GitHub Actions build
+- Version comparison prevents duplicate deployment
+
+### Scenario 4: Emergency Patch
 
 ```bash
 # Rollback to previous version on APT server
@@ -1112,7 +1182,7 @@ vaultctl/
 │       ├── docker.py       # Docker env vars
 │       ├── token.py        # Token management
 │       ├── setup.py        # Initial setup (init, apt-server, apt-client, systemd)
-│       ├── repo.py         # APT repository management (add, remove, list, info)
+│       ├── repo.py         # APT repository management (add, remove, list, sync, config)
 │       └── extended.py     # Extended commands (run, sh, scan, redact, watch)
 ├── packaging/              # deb package configuration
 │   ├── etc/
@@ -1156,6 +1226,7 @@ MIT License
 | **Auto token renewal** | ❌ | ✅ systemd timer |
 | **Clipboard copy** | ❌ | ✅ |
 | **APT package** | ❌ Binary only | ✅ deb + APT repo |
+| **GitHub release sync** | ❌ | ✅ `vaultctl repo sync` |
 
 **When to use teller?**
 - Multi-cloud environment (AWS + GCP + Azure)

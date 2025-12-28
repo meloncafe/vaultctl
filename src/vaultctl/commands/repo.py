@@ -2,8 +2,10 @@
 APT 저장소 관리 명령어.
 """
 
+import json
 import os
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -42,6 +44,79 @@ def _load_config() -> dict:
             key, value = line.split("=", 1)
             config[key.strip()] = value.strip().strip('"')
     return config
+
+
+def _save_config(config: dict) -> None:
+    """Save APT config / APT 설정 저장."""
+    lines = []
+    for key, value in config.items():
+        lines.append(f'{key}="{value}"')
+    APT_CONFIG_FILE.write_text("\n".join(lines) + "\n")
+
+
+def _check_gh_installed() -> bool:
+    """Check if GitHub CLI is installed / GitHub CLI 설치 여부 확인."""
+    try:
+        subprocess.run(["gh", "--version"], capture_output=True, check=True)
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return False
+
+
+def _get_installed_version(package: str, codename: str) -> Optional[str]:
+    """Get currently installed package version / 현재 설치된 패키지 버전 확인."""
+    os.environ["GNUPGHOME"] = str(APT_GPG_HOME)
+    result = subprocess.run(
+        ["reprepro", "-b", str(APT_REPO), "list", codename],
+        capture_output=True,
+        text=True,
+    )
+    
+    for line in result.stdout.strip().splitlines():
+        if package in line:
+            # Format: codename|component|arch: package version
+            parts = line.split()
+            if len(parts) >= 2:
+                return parts[-1]  # version is last part
+    return None
+
+
+def _get_github_latest_release(repo: str) -> Optional[dict]:
+    """Get latest release info from GitHub / GitHub에서 최신 릴리스 정보 가져오기."""
+    try:
+        result = subprocess.run(
+            ["gh", "release", "list", "-R", repo, "--limit", "1", "--json", "tagName,name,publishedAt,isLatest"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        releases = json.loads(result.stdout)
+        if releases:
+            return releases[0]
+        return None
+    except (subprocess.CalledProcessError, json.JSONDecodeError) as e:
+        console.print(f"[red]✗[/red] Failed to get release info: {e}")
+        return None
+
+
+def _download_deb_from_release(repo: str, tag: str, dest_dir: Path) -> Optional[Path]:
+    """Download .deb file from GitHub release / GitHub 릴리스에서 .deb 파일 다운로드."""
+    try:
+        result = subprocess.run(
+            ["gh", "release", "download", tag, "-R", repo, "--pattern", "*.deb", "-D", str(dest_dir)],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        
+        # Find downloaded deb file / 다운로드된 deb 파일 찾기
+        for f in dest_dir.iterdir():
+            if f.suffix == ".deb":
+                return f
+        return None
+    except subprocess.CalledProcessError as e:
+        console.print(f"[red]✗[/red] Failed to download: {e.stderr}")
+        return None
 
 
 @app.command("add")
@@ -330,3 +405,168 @@ def clean_repo(
     except subprocess.CalledProcessError as e:
         console.print(f"[red]✗[/red] Cleanup failed: {e}")
         raise typer.Exit(1)
+
+
+@app.command("sync")
+def sync_github(
+    check_only: bool = typer.Option(False, "--check", "-c", help="Check for updates only, don't deploy"),
+    force: bool = typer.Option(False, "--force", "-f", help="Force deploy even if version exists"),
+    package: Optional[str] = typer.Option(None, "--package", "-p", help="Package name to check (default: from deb filename)"),
+):
+    """Sync latest release from GitHub to APT repository.
+    GitHub의 최신 릴리스를 APT 저장소에 동기화.
+
+    Requires: GitHub CLI (gh) installed and authenticated.
+    필요: GitHub CLI (gh) 설치 및 인증 완료.
+
+    Examples:
+        vaultctl repo sync              # Download and deploy latest release
+        vaultctl repo sync --check      # Check for updates only
+        vaultctl repo sync --force      # Force deploy even if exists
+    """
+    _check_repo_exists()
+    
+    # Check gh CLI / gh CLI 확인
+    if not _check_gh_installed():
+        console.print("[red]✗[/red] GitHub CLI (gh) is not installed.")
+        console.print("  Install: https://cli.github.com/")
+        console.print("  Ubuntu: sudo apt install gh")
+        raise typer.Exit(1)
+    
+    # Load config / 설정 로드
+    config = _load_config()
+    github_repo = config.get("GITHUB_REPO")
+    
+    if not github_repo:
+        console.print("[red]✗[/red] GitHub repository not configured.")
+        console.print("  Run: vaultctl repo config --github-repo owner/repo")
+        raise typer.Exit(1)
+    
+    codename = config.get("REPO_CODENAME", "stable")
+    
+    console.print(f"[bold]Checking GitHub releases...[/bold]")
+    console.print(f"  Repository: {github_repo}")
+    
+    # Get latest release / 최신 릴리스 확인
+    release = _get_github_latest_release(github_repo)
+    if not release:
+        console.print("[red]✗[/red] No releases found.")
+        raise typer.Exit(1)
+    
+    tag = release.get("tagName", "")
+    release_name = release.get("name", tag)
+    
+    # Extract version from tag (remove 'v' prefix if present)
+    github_version = tag.lstrip("v")
+    
+    console.print(f"  Latest release: {release_name} ({tag})")
+    console.print(f"  Published: {release.get('publishedAt', 'N/A')[:10]}")
+    
+    # Check current version / 현재 버전 확인
+    pkg_name = package or github_repo.split("/")[-1]  # Default to repo name
+    current_version = _get_installed_version(pkg_name, codename)
+    
+    if current_version:
+        console.print(f"  Current version: {current_version}")
+        
+        if current_version == github_version and not force:
+            console.print("\n[green]✓[/green] Already up to date.")
+            return
+        elif current_version == github_version and force:
+            console.print("\n[yellow]![/yellow] Same version, forcing deploy...")
+    else:
+        console.print(f"  Current version: [dim]not installed[/dim]")
+    
+    if check_only:
+        if current_version != github_version:
+            console.print(f"\n[yellow]![/yellow] New version available: {github_version}")
+            console.print("  Run without --check to deploy.")
+        return
+    
+    # Download and deploy / 다운로드 및 배포
+    console.print(f"\n[bold]Downloading release {tag}...[/bold]")
+    
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmppath = Path(tmpdir)
+        deb_file = _download_deb_from_release(github_repo, tag, tmppath)
+        
+        if not deb_file:
+            console.print("[red]✗[/red] No .deb file found in release.")
+            raise typer.Exit(1)
+        
+        console.print(f"  Downloaded: {deb_file.name}")
+        
+        # Add to repository / 저장소에 추가
+        console.print(f"\n[bold]Deploying to APT repository...[/bold]")
+        os.environ["GNUPGHOME"] = str(APT_GPG_HOME)
+        
+        try:
+            subprocess.run(
+                ["reprepro", "-b", str(APT_REPO), "includedeb", codename, str(deb_file)],
+                check=True,
+            )
+            console.print(f"[green]✓[/green] Successfully deployed {deb_file.name}")
+            console.print(f"\n  Clients can update with:")
+            console.print(f"    sudo apt update && sudo apt upgrade {pkg_name}")
+        except subprocess.CalledProcessError as e:
+            console.print(f"[red]✗[/red] Failed to deploy: {e}")
+            raise typer.Exit(1)
+
+
+@app.command("config")
+def repo_config(
+    github_repo: Optional[str] = typer.Option(None, "--github-repo", "-g", help="Set GitHub repository (owner/repo)"),
+    show: bool = typer.Option(False, "--show", "-s", help="Show current configuration"),
+):
+    """Configure APT repository settings.
+    APT 저장소 설정 관리.
+
+    Examples:
+        vaultctl repo config                           # Show current config
+        vaultctl repo config --github-repo owner/repo  # Set GitHub repository
+        vaultctl repo config -g harmonys-app/vaultctl  # Set GitHub repository
+    """
+    _check_repo_exists()
+    
+    config = _load_config()
+    
+    # Set GitHub repository / GitHub 저장소 설정
+    if github_repo:
+        if "/" not in github_repo:
+            console.print("[red]✗[/red] Invalid format. Use: owner/repo")
+            console.print("  Example: harmonys-app/vaultctl")
+            raise typer.Exit(1)
+        
+        config["GITHUB_REPO"] = github_repo
+        _save_config(config)
+        console.print(f"[green]✓[/green] GitHub repository set: {github_repo}")
+        return
+    
+    # Show configuration / 설정 표시
+    console.print(Panel.fit(
+        "[bold blue]APT Repository Configuration[/bold blue]",
+        title="⚙️  Config",
+    ))
+    
+    table = Table(show_header=True, header_style="bold cyan")
+    table.add_column("Setting")
+    table.add_column("Value")
+    
+    table.add_row("Domain", config.get("DOMAIN", "[dim]not set[/dim]"))
+    table.add_row("Codename", config.get("REPO_CODENAME", "stable"))
+    table.add_row("Web Server", config.get("WEB_SERVER", "[dim]not set[/dim]").upper())
+    table.add_row("GitHub Repository", config.get("GITHUB_REPO", "[dim]not set[/dim]"))
+    table.add_row("Auth Enabled", config.get("ENABLE_AUTH", "false"))
+    
+    if config.get("ENABLE_AUTH") == "true":
+        table.add_row("Auth User", config.get("AUTH_USER", "[dim]not set[/dim]"))
+    
+    console.print(table)
+    
+    # Show sync command hint if GitHub repo is set / GitHub 저장소 설정 시 sync 명령어 힌트
+    if config.get("GITHUB_REPO"):
+        console.print("\n[dim]To sync latest release:[/dim]")
+        console.print("  vaultctl repo sync")
+    else:
+        console.print("\n[dim]To enable GitHub sync:[/dim]")
+        console.print("  vaultctl repo config --github-repo owner/repo")

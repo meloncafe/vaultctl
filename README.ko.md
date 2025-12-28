@@ -23,6 +23,7 @@ Proxmox LXC 컨테이너의 비밀번호/URL, Docker 환경변수를 Vault로 �
   - [vaultctl redact](#vaultctl-redact---로그-정리)
   - [vaultctl watch](#vaultctl-watch---비밀-변경-감지)
 - [APT 서버 구축](#apt-서버-구축)
+  - [GitHub 릴리스 동기화](#github-릴리스-동기화-repo-sync)
 - [패키지 빌드 및 배포](#패키지-빌드-및-배포)
 - [업데이트 플로우](#업데이트-플로우)
 - [보안 참고사항](#보안-참고사항)
@@ -43,6 +44,7 @@ Proxmox LXC 컨테이너의 비밀번호/URL, Docker 환경변수를 Vault로 �
 - 🔎 **비밀 스캔**: 코드에서 하드코딩된 비밀 검색 (DevSecOps)
 - 🛡️ **로그 마스킹**: 출력/로그에서 비밀 자동 리다크션
 - 👁️ **변경 감지**: Vault 비밀 변경 시 자동 재시작 (`vaultctl watch`)
+- 🔗 **GitHub 릴리스 동기화**: GitHub에서 최신 버전 자동 배포 (`vaultctl repo sync`)
 
 ---
 
@@ -783,6 +785,50 @@ vaultctl repo check
 vaultctl repo clean
 ```
 
+### GitHub 릴리스 동기화 (repo sync)
+
+GitHub 릴리스에서 최신 버전을 자동으로 가져와 APT 저장소에 배포합니다.
+
+**사전 요구사항:**
+- GitHub CLI (`gh`) 설치 및 인증: `gh auth login`
+
+```bash
+# GitHub 저장소 설정 (최초 1회)
+vaultctl repo config --github-repo owner/repo
+vaultctl repo config -g harmonys-app/vaultctl
+
+# 현재 설정 확인
+vaultctl repo config
+
+# 최신 릴리스 확인 및 배포
+vaultctl repo sync
+
+# 업데이트 확인만 (배포 안함)
+vaultctl repo sync --check
+
+# 강제 배포 (같은 버전이어도)
+vaultctl repo sync --force
+```
+
+**예시 출력:**
+```
+$ vaultctl repo sync
+Checking GitHub releases...
+  Repository: harmonys-app/vaultctl
+  Latest release: v0.2.0 (v0.2.0)
+  Published: 2025-01-15
+  Current version: 0.1.0
+
+Downloading release v0.2.0...
+  Downloaded: vaultctl_0.2.0_amd64.deb
+
+Deploying to APT repository...
+✓ Successfully deployed vaultctl_0.2.0_amd64.deb
+
+  Clients can update with:
+    sudo apt update && sudo apt upgrade vaultctl
+```
+
 ### 레거시 명령어 (호환성)
 
 이전 스크립트 방식 명령어도 계속 사용 가능:
@@ -919,7 +965,31 @@ sudo apt update
 sudo apt upgrade vaultctl
 ```
 
-### 시나리오 3: 긴급 패치
+### 시나리오 3: GitHub 릴리스 동기화 (repo sync)
+
+APT 서버에서 GitHub 릴리스를 자동으로 가져와 배포합니다.
+
+```bash
+# APT 서버에서 (최초 1회 설정)
+vaultctl repo config -g harmonys-app/vaultctl
+
+# 최신 버전 확인
+vaultctl repo sync --check
+
+# 배포
+vaultctl repo sync
+
+# 각 LXC에서
+sudo apt update
+sudo apt upgrade vaultctl
+```
+
+**장점:**
+- 개발 머신에서 SCP로 파일 복사 불필요
+- GitHub Actions로 빌드 후 APT 서버에서 한 명령어로 배포
+- 버전 비교로 중복 배포 방지
+
+### 시나리오 4: 긴급 패치
 
 ```bash
 # APT 서버에서 직접 이전 버전으로 롤백
@@ -1112,7 +1182,7 @@ vaultctl/
 │       ├── docker.py       # Docker 환경변수
 │       ├── token.py        # 토큰 관리
 │       ├── setup.py        # 초기 설정 (init, apt-server, apt-client, systemd)
-│       ├── repo.py         # APT 저장소 관리 (add, remove, list, info)
+│       ├── repo.py         # APT 저장소 관리 (add, remove, list, sync, config)
 │       └── extended.py     # 확장 명령어 (run, sh, scan, redact, watch)
 ├── packaging/              # deb 패키지 설정
 │   ├── etc/
@@ -1156,6 +1226,7 @@ MIT License
 | **토큰 자동 갱신** | ❌ | ✅ systemd timer |
 | **클립보드 복사** | ❌ | ✅ |
 | **APT 패키지** | ❌ 바이너리만 | ✅ deb + APT 저장소 |
+| **GitHub 릴리스 동기화** | ❌ | ✅ `vaultctl repo sync` |
 
 **언제 teller를 사용?**
 - 다중 클라우드 환경 (AWS + GCP + Azure)
