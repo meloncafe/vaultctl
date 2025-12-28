@@ -112,8 +112,8 @@ jobs:
           cp packaging/etc/config.example pkg-root/etc/vaultctl/
           
           # systemd unit files / systemd 유닛 파일
-          cp systemd/vaultctl-renew.service pkg-root/lib/systemd/system/
-          cp systemd/vaultctl-renew.timer pkg-root/lib/systemd/system/
+          cp packaging/systemd/vaultctl-renew.service pkg-root/lib/systemd/system/
+          cp packaging/systemd/vaultctl-renew.timer pkg-root/lib/systemd/system/
           
           # Documentation / 문서
           cp README.md pkg-root/usr/share/doc/vaultctl/
@@ -207,10 +207,12 @@ jobs:
             sudo apt install ./${{ needs.build.outputs.deb_name }}
             ```
 
-            ### APT repository (GitHub Pages) / APT 저장소
+            ### From private APT server / 개인 APT 서버에서
             ```bash
-            echo "deb [trusted=yes] https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }} stable main" | \
-                sudo tee /etc/apt/sources.list.d/vaultctl.list
+            # Setup client (one-time)
+            sudo vaultctl setup apt-client https://apt.example.com -u USER -p PASS
+            
+            # Install
             sudo apt update && sudo apt install vaultctl
             ```
 
