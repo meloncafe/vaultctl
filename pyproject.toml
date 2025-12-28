@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "vaultctl"
-version = "0.1.0"
+version = "0.0.0-dev"
 description = "HashiCorp Vault CLI wrapper with 1Password integration"
 authors = ["Aether <aether@gmail.com>"]
 readme = "README.md"
