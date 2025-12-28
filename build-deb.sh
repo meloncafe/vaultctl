@@ -262,6 +262,11 @@ if command -v systemctl &> /dev/null; then
     systemctl daemon-reload
     systemctl reset-failed vaultctl-renew.service 2>/dev/null || true
     systemctl reset-failed vaultctl-renew.timer 2>/dev/null || true
+    
+    # timer가 활성화되어 있으면 서비스 한 번 실행 (업그레이드 후 정상 작동 확인)
+    if systemctl is-enabled vaultctl-renew.timer &>/dev/null; then
+        systemctl start vaultctl-renew.service 2>/dev/null || true
+    fi
 fi
 
 # 설정 파일 생성 안내

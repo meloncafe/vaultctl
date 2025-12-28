@@ -129,6 +129,11 @@ jobs:
               systemctl daemon-reload
               systemctl reset-failed vaultctl-renew.service 2>/dev/null || true
               systemctl reset-failed vaultctl-renew.timer 2>/dev/null || true
+              
+              # timer가 활성화되어 있으면 서비스 한 번 실행
+              if systemctl is-enabled vaultctl-renew.timer &>/dev/null; then
+                  systemctl start vaultctl-renew.service 2>/dev/null || true
+              fi
           fi
           echo ""
           echo "╔═══════════════════════════════════════════════════════════╗"
