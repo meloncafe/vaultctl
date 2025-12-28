@@ -6,7 +6,7 @@ After=network.target
 Type=oneshot
 # 1Password CLI가 필요하면 op 경로 추가
 # Environment=PATH=/usr/local/bin:/usr/bin
-ExecStart=/usr/local/bin/vaultctl token auto-renew --quiet
+ExecStart=/usr/bin/vaultctl token auto-renew --quiet
 
 # 환경변수 파일 사용 (권장)
 EnvironmentFile=-/etc/vaultctl/env
