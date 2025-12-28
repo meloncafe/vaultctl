@@ -238,6 +238,20 @@ EOF
 create_scripts() {
     mkdir -p "$BUILD_DIR/scripts"
     
+    # preinst (설치 전) - 기존 systemd 파일 정리
+    cat > "$BUILD_DIR/scripts/preinst" << 'EOF'
+#!/bin/bash
+set -e
+
+# 업그레이드 시 기존 systemd 파일 삭제 (새 버전으로 교체 보장)
+if [ "$1" = "upgrade" ] || [ "$1" = "install" ]; then
+    rm -f /lib/systemd/system/vaultctl-renew.service
+    rm -f /lib/systemd/system/vaultctl-renew.timer
+fi
+
+exit 0
+EOF
+
     # postinst (설치 후)
     cat > "$BUILD_DIR/scripts/postinst" << 'EOF'
 #!/bin/bash
@@ -324,6 +338,7 @@ build_deb() {
         --depends "ca-certificates" \
         --config-files /etc/vaultctl/config.env.example \
         --config-files /etc/vaultctl/env.example \
+        --before-install "$BUILD_DIR/scripts/preinst" \
         --after-install "$BUILD_DIR/scripts/postinst" \
         --before-remove "$BUILD_DIR/scripts/prerm" \
         --after-remove "$BUILD_DIR/scripts/postrm" \

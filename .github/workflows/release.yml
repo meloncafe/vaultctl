@@ -22,10 +22,10 @@ jobs:
     
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
       
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
       
@@ -83,15 +83,22 @@ jobs:
           
           # Config examples
           cat > pkg-root/etc/vaultctl/env.example << 'ENVEOF'
-          # vaultctl environment configuration
-          # Copy to /etc/vaultctl/env and edit
-          
-          VAULT_ADDR=https://vault.example.com
-          VAULT_TOKEN=hvs.xxxxxxxxxxxxx
-          
-          VAULTCTL_TOKEN_RENEW_THRESHOLD=3600
-          VAULTCTL_TOKEN_RENEW_INCREMENT=86400
-          ENVEOF
+# vaultctl environment configuration
+# Copy to /etc/vaultctl/env and edit
+
+VAULT_ADDR=https://vault.example.com
+VAULTCTL_VAULT_ADDR=https://vault.example.com
+
+# AppRole 인증 (권장)
+# VAULTCTL_APPROLE_ROLE_ID=xxxx-xxxx-xxxx
+# VAULTCTL_APPROLE_SECRET_ID=yyyy-yyyy-yyyy
+
+# 또는 토큰 직접 입력 (비권장)
+# VAULT_TOKEN=hvs.xxxxxxxxxxxxx
+
+VAULTCTL_TOKEN_RENEW_THRESHOLD=3600
+VAULTCTL_TOKEN_RENEW_INCREMENT=86400
+ENVEOF
           
           # systemd files
           cp systemd/vaultctl-renew.service pkg-root/lib/systemd/system/
@@ -103,6 +110,17 @@ jobs:
       - name: Create maintainer scripts
         run: |
           mkdir -p scripts
+          
+          cat > scripts/preinst << 'EOF'
+          #!/bin/bash
+          set -e
+          # 업그레이드 시 기존 systemd 파일 삭제 (새 버전으로 교체 보장)
+          if [ "$1" = "upgrade" ] || [ "$1" = "install" ]; then
+              rm -f /lib/systemd/system/vaultctl-renew.service
+              rm -f /lib/systemd/system/vaultctl-renew.timer
+          fi
+          exit 0
+          EOF
           
           cat > scripts/postinst << 'EOF'
           #!/bin/bash
@@ -150,10 +168,11 @@ jobs:
             --version ${{ steps.version.outputs.version }} \
             --architecture amd64 \
             --maintainer "vaultctl maintainers" \
-            --description "HashiCorp Vault CLI with 1Password integration" \
+            --description "HashiCorp Vault CLI with AppRole authentication" \
             --url "https://github.com/${{ github.repository }}" \
             --license "MIT" \
             --depends "ca-certificates" \
+            --before-install scripts/preinst \
             --after-install scripts/postinst \
             --before-remove scripts/prerm \
             --after-remove scripts/postrm \
@@ -162,7 +181,7 @@ jobs:
             .
       
       - name: Upload artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: deb-package
           path: ${{ steps.version.outputs.deb_name }}
@@ -178,19 +197,19 @@ jobs:
     
     steps:
       - name: Checkout (for install script)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           sparse-checkout: |
             scripts/install.sh
           sparse-checkout-cone-mode: false
       
       - name: Download artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v4
         with:
           name: deb-package
       
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v1
         with:
           files: |
             ${{ needs.build.outputs.deb_name }}
@@ -221,3 +240,127 @@ jobs:
             ```bash
             sudo vaultctl setup init
             ```
+
+  # GitHub Pages로 APT 저장소 호스팅
+  deploy-apt-repo:
+    needs: [build, release]
+    runs-on: ubuntu-22.04
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: deb-package
+          path: apt-repo/pool/main/
+      
+      - name: Setup APT repository structure
+        run: |
+          cd apt-repo
+          mkdir -p dists/stable/main/binary-amd64
+          
+          # Install apt-ftparchive
+          sudo apt-get update
+          sudo apt-get install -y apt-utils
+          
+          # Generate Packages
+          apt-ftparchive packages pool/main > dists/stable/main/binary-amd64/Packages
+          gzip -kf dists/stable/main/binary-amd64/Packages
+          
+          # Generate Release
+          cat > dists/stable/Release << EOF
+          Origin: vaultctl
+          Label: vaultctl  
+          Suite: stable
+          Codename: stable
+          Architectures: amd64
+          Components: main
+          Description: vaultctl APT repository hosted on GitHub Pages
+          Date: $(date -Ru)
+          EOF
+          
+          # Add checksums to Release
+          cd dists/stable
+          {
+            echo "MD5Sum:"
+            find main -type f | while read f; do
+              echo " $(md5sum "$f" | cut -d' ' -f1) $(stat -c%s "$f") $f"
+            done
+            echo "SHA256:"
+            find main -type f | while read f; do
+              echo " $(sha256sum "$f" | cut -d' ' -f1) $(stat -c%s "$f") $f"
+            done
+          } >> Release
+      
+      - name: Create landing page
+        run: |
+          cat > apt-repo/index.html << 'EOF'
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>vaultctl APT Repository</title>
+            <style>
+              :root { --bg: #0d1117; --fg: #c9d1d9; --accent: #58a6ff; --code-bg: #161b22; }
+              body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+                     background: var(--bg); color: var(--fg); max-width: 800px; margin: 0 auto; padding: 40px 20px; }
+              h1 { color: var(--accent); }
+              h2 { border-bottom: 1px solid #30363d; padding-bottom: 8px; margin-top: 32px; }
+              pre { background: var(--code-bg); padding: 16px; border-radius: 6px; overflow-x: auto; }
+              code { font-family: 'SF Mono', Monaco, monospace; font-size: 14px; }
+              a { color: var(--accent); }
+              .badge { display: inline-block; background: #238636; color: white; padding: 4px 8px; 
+                       border-radius: 4px; font-size: 12px; margin-left: 8px; }
+            </style>
+          </head>
+          <body>
+            <h1>🔐 vaultctl <span class="badge">APT Repository</span></h1>
+            <p>HashiCorp Vault CLI with AppRole authentication for Ubuntu/Debian</p>
+            
+            <h2>📦 Installation</h2>
+            <pre><code># Add APT repository
+          echo "deb [trusted=yes] https://REPO_URL stable main" | \
+              sudo tee /etc/apt/sources.list.d/vaultctl.list
+
+          # Install
+          sudo apt update
+          sudo apt install vaultctl</code></pre>
+            
+            <h2>⚡ Quick Setup</h2>
+            <pre><code>sudo vaultctl setup init</code></pre>
+            
+            <h2>🔗 Links</h2>
+            <ul>
+              <li><a href="https://github.com/GITHUB_REPO">GitHub Repository</a></li>
+              <li><a href="https://github.com/GITHUB_REPO/releases">All Releases</a></li>
+            </ul>
+            
+            <h2>✨ Features</h2>
+            <ul>
+              <li>🔐 AppRole authentication (auto token renewal)</li>
+              <li>📦 LXC container secrets management</li>
+              <li>🐳 Docker .env file generation</li>
+              <li>🔄 Automatic token renewal (systemd timer)</li>
+              <li>📋 Clipboard copy support</li>
+            </ul>
+          </body>
+          </html>
+          EOF
+          
+          # Replace placeholders
+          REPO_URL="${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}"
+          sed -i "s|REPO_URL|$REPO_URL|g" apt-repo/index.html
+          sed -i "s|GITHUB_REPO|${{ github.repository }}|g" apt-repo/index.html
+      
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./apt-repo
+          force_orphan: true
+          commit_message: "Deploy APT repo: v${{ needs.build.outputs.version }}"
