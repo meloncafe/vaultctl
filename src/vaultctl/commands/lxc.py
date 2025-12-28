@@ -6,13 +6,12 @@ from typing import Optional
 
 import typer
 from rich.console import Console
-from rich.panel import Panel
 from rich.table import Table
 
-from vaultctl.config import settings
-from vaultctl.vault_client import VaultError
-from vaultctl.utils import copy_to_clipboard, create_kv_table, parse_key_value_args
 from vaultctl.commands.auth import ensure_authenticated
+from vaultctl.config import settings
+from vaultctl.utils import copy_to_clipboard, create_kv_table, parse_key_value_args
+from vaultctl.vault_client import VaultError
 
 app = typer.Typer(help="LXC 컨테이너 정보 관리")
 console = Console()
@@ -22,16 +21,19 @@ def _get_lxc_path(name: str) -> str:
     """LXC 경로 생성."""
     return f"{settings.kv_lxc_path}/{name}"
 
+def _get_auth_client():
+    """인증된 VaultClient 반환."""
+    client = ensure_authenticated()
+    return client
+
 
 @app.command("list")
 def list_lxc(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="상세 정보 출력"),
 ):
     """등록된 LXC 목록 조회."""
-    client = ensure_authenticated()
-
     try:
-        items = client.kv_list(settings.kv_mount, settings.kv_lxc_path)
+        items = _get_auth_client().kv_list(settings.kv_mount, settings.kv_lxc_path)
     except VaultError as e:
         console.print(f"[red]✗[/red] 조회 실패: {e.message}")
         raise typer.Exit(1)
@@ -50,7 +52,7 @@ def list_lxc(
         for item in sorted(items):
             name = item.rstrip("/")
             try:
-                data = client.kv_get(settings.kv_mount, _get_lxc_path(name))
+                data = _get_auth_client().kv_get(settings.kv_mount, _get_lxc_path(name))
                 ip = data.get("ip", "-")
                 notes = data.get("notes", "-")
                 table.add_row(name, ip, notes[:40] + "..." if len(notes) > 40 else notes)
@@ -72,10 +74,8 @@ def get_lxc(
     raw: bool = typer.Option(False, "--raw", help="값만 출력 (스크립트용)"),
 ):
     """LXC 정보 조회."""
-    client = ensure_authenticated()
-
     try:
-        data = client.kv_get(settings.kv_mount, _get_lxc_path(name))
+        data = _get_auth_client().kv_get(settings.kv_mount, _get_lxc_path(name))
     except VaultError as e:
         if e.status_code == 404:
             console.print(f"[red]✗[/red] LXC를 찾을 수 없습니다: {name}")
@@ -125,8 +125,6 @@ def put_lxc(
     merge: bool = typer.Option(True, "--merge/--replace", help="기존 값과 병합 (기본) / 교체"),
 ):
     """LXC 정보 저장."""
-    client = ensure_authenticated()
-
     new_data = parse_key_value_args(data)
     if not new_data:
         console.print("[red]✗[/red] key=value 형식으로 데이터를 입력하세요.")
@@ -136,14 +134,14 @@ def put_lxc(
     # 기존 값과 병합
     if merge:
         try:
-            existing = client.kv_get(settings.kv_mount, _get_lxc_path(name))
+            existing = _get_auth_client().kv_get(settings.kv_mount, _get_lxc_path(name))
             existing.update(new_data)
             new_data = existing
         except VaultError:
             pass  # 새로 생성
 
     try:
-        client.kv_put(settings.kv_mount, _get_lxc_path(name), new_data)
+        _get_auth_client().kv_put(settings.kv_mount, _get_lxc_path(name), new_data)
         console.print(f"[green]✓[/green] 저장 완료: {name}")
 
         # 저장된 내용 표시
@@ -161,8 +159,6 @@ def delete_lxc(
     force: bool = typer.Option(False, "--force", "-f", help="확인 없이 삭제"),
 ):
     """LXC 정보 삭제."""
-    client = ensure_authenticated()
-
     if not force:
         confirm = typer.confirm(f"정말 '{name}'을(를) 삭제하시겠습니까?")
         if not confirm:
@@ -170,7 +166,7 @@ def delete_lxc(
             raise typer.Exit(0)
 
     try:
-        client.kv_delete(settings.kv_mount, _get_lxc_path(name))
+        _get_auth_client().kv_delete(settings.kv_mount, _get_lxc_path(name))
         console.print(f"[green]✓[/green] 삭제 완료: {name}")
     except VaultError as e:
         console.print(f"[red]✗[/red] 삭제 실패: {e.message}")
@@ -183,10 +179,8 @@ def get_password(
     field: str = typer.Option("root_password", "--field", "-f", help="비밀번호 필드명"),
 ):
     """LXC 비밀번호를 클립보드에 복사."""
-    client = ensure_authenticated()
-
     try:
-        data = client.kv_get(settings.kv_mount, _get_lxc_path(name))
+        data = _get_auth_client().kv_get(settings.kv_mount, _get_lxc_path(name))
     except VaultError as e:
         if e.status_code == 404:
             console.print(f"[red]✗[/red] LXC를 찾을 수 없습니다: {name}")
@@ -214,8 +208,6 @@ def import_lxc(
     dry_run: bool = typer.Option(False, "--dry-run", "-n", help="실제 저장 없이 검증만"),
 ):
     """JSON 파일에서 LXC 정보 일괄 등록."""
-    client = ensure_authenticated()
-
     if not file.exists():
         console.print(f"[red]✗[/red] 파일을 찾을 수 없습니다: {file}")
         raise typer.Exit(1)
@@ -253,7 +245,7 @@ def import_lxc(
             success += 1
         else:
             try:
-                client.kv_put(settings.kv_mount, _get_lxc_path(name), lxc_data)
+                _get_auth_client().kv_put(settings.kv_mount, _get_lxc_path(name), lxc_data)
                 console.print(f"  [green]✓[/green] {name}")
                 success += 1
             except VaultError as e:
@@ -268,10 +260,8 @@ def export_lxc(
     output: Optional[Path] = typer.Option(None, "--output", "-o", help="출력 파일 (생략 시 stdout)"),
 ):
     """등록된 모든 LXC를 JSON으로 내보내기."""
-    client = ensure_authenticated()
-
     try:
-        items = client.kv_list(settings.kv_mount, settings.kv_lxc_path)
+        items = _get_auth_client().kv_list(settings.kv_mount, settings.kv_lxc_path)
     except VaultError as e:
         console.print(f"[red]✗[/red] 조회 실패: {e.message}")
         raise typer.Exit(1)
@@ -284,7 +274,7 @@ def export_lxc(
     for item in items:
         name = item.rstrip("/")
         try:
-            data = client.kv_get(settings.kv_mount, _get_lxc_path(name))
+            data = _get_auth_client().kv_get(settings.kv_mount, _get_lxc_path(name))
             result[name] = data
         except VaultError:
             result[name] = {}

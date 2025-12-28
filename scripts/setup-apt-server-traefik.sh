@@ -1,5 +1,5 @@
 #!/bin/bash
-#===============================================================================
+# ─────────────────────────────────────────────────────────────────────────────
 # 개인 APT 저장소 서버 구축 스크립트 (Traefik 환경용)
 # 
 # 특징:
@@ -11,7 +11,7 @@
 # 사용법:
 #   sudo ./setup-apt-server-traefik.sh
 #   sudo ./setup-apt-server-traefik.sh --reconfigure  # 설정만 변경
-#===============================================================================
+# ─────────────────────────────────────────────────────────────────────────────
 
 set -e
 
@@ -679,6 +679,13 @@ server {
         # No directory listing for security
         autoindex off;
     }
+
+    # Prevent no-caching of Packages and Release files
+    location /dists/ {
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires 0;
+    }
     
     access_log /var/log/nginx/apt-access.log;
     error_log /var/log/nginx/apt-error.log;
@@ -707,6 +714,13 @@ server {
         fancyindex_footer "/.theme/footer.html";
         fancyindex_time_format "%Y-%m-%d %H:%M";
         fancyindex_name_length 50;
+    }
+
+    # Prevent no-caching of Packages and Release files
+    location /dists/ {
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires 0;
     }
     
     access_log /var/log/nginx/apt-access.log;
@@ -1334,7 +1348,7 @@ main() {
     
     if [[ "$reconfigure_only" == "true" ]]; then
         save_config
-
+        
         # 기존 GPG 키 ID 조회
         export GNUPGHOME="$GPG_HOME"
         GPG_KEY_ID=$(gpg --list-keys --keyid-format SHORT 2>/dev/null | grep -E '^\s+[A-F0-9]+' | awk '{print $1}' | head -1)
@@ -1348,7 +1362,7 @@ main() {
         fi
         export GPG_KEY_ID
         print_step "GPG 키 ID: $GPG_KEY_ID"
-
+        
         # GPG 키 파일 이름 마이그레이션 (KEY.gpg -> key.gpg)
         if [[ -f "$REPO_DIR/KEY.gpg" ]] && [[ ! -f "$REPO_DIR/key.gpg" ]]; then
             print_step "GPG 키 파일 이름 변경 (KEY.gpg -> key.gpg)..."

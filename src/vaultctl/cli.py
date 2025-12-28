@@ -1,10 +1,10 @@
 """Vault CLI 메인 애플리케이션."""
-
+from pathlib import Path
 from typing import Optional
 
 import typer
 from rich.console import Console
-from rich.panel import Panel
+from rich.table import Table
 
 from vaultctl import __version__
 from vaultctl.commands import auth, docker, lxc, setup, token, extended
@@ -35,7 +35,7 @@ app.command("watch")(extended.watch_and_restart)
 
 @app.callback(invoke_without_command=True)
 def main(
-    ctx: typer.Context,
+    _ctx: typer.Context,
     version: bool = typer.Option(False, "--version", "-v", help="버전 출력"),
     vault_addr: Optional[str] = typer.Option(
         None,
@@ -106,15 +106,15 @@ def quick_status():
 
 @app.command("ls")
 def quick_list(
-    type: str = typer.Argument("lxc", help="타입: lxc, docker"),
+    _type: str = typer.Argument("lxc", help="타입: lxc, docker"),
 ):
     """[단축] 목록 조회."""
-    if type == "lxc":
+    if _type == "lxc":
         lxc.list_lxc(verbose=False)
-    elif type == "docker":
+    elif _type == "docker":
         docker.list_docker()
     else:
-        console.print(f"[red]✗[/red] 알 수 없는 타입: {type}")
+        console.print(f"[red]✗[/red] 알 수 없는 타입: {_type}")
         console.print("  사용 가능: lxc, docker")
         raise typer.Exit(1)
 
@@ -122,15 +122,15 @@ def quick_list(
 @app.command("get")
 def quick_get(
     name: str = typer.Argument(..., help="이름 (예: 130-n8n)"),
-    type: str = typer.Option("lxc", "--type", "-t", help="타입: lxc, docker"),
+    _type: str = typer.Option("lxc", "--type", "-t", help="타입: lxc, docker"),
 ):
     """[단축] 정보 조회."""
-    if type == "lxc":
+    if _type == "lxc":
         lxc.get_lxc(name=name, field=None, copy=False, raw=False)
-    elif type == "docker":
+    elif _type == "docker":
         docker.get_docker(name=name, raw=False)
     else:
-        console.print(f"[red]✗[/red] 알 수 없는 타입: {type}")
+        console.print(f"[red]✗[/red] 알 수 없는 타입: {_type}")
         raise typer.Exit(1)
 
 
@@ -149,8 +149,6 @@ def quick_env(
     output: str = typer.Option(".env", "--output", "-o", help="출력 파일"),
 ):
     """[단축] docker env - .env 파일 생성."""
-    from pathlib import Path
-
     docker.generate_env(name=name, output=Path(output), stdout=False)
 
 
@@ -162,8 +160,6 @@ def quick_env(
 @app.command("config")
 def show_config():
     """현재 설정 출력."""
-    from rich.table import Table
-
     table = Table(title="현재 설정", show_header=True, header_style="bold cyan")
     table.add_column("설정", style="green")
     table.add_column("값", style="white")

@@ -10,8 +10,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 
+from vaultctl.commands.auth import ensure_authenticated
 from vaultctl.config import settings
-from vaultctl.onepassword import get_vault_token_from_op, is_op_installed, is_op_signed_in
 from vaultctl.vault_client import VaultClient, VaultError
 
 app = typer.Typer(help="초기 설정 및 systemd 관리")
@@ -26,10 +26,15 @@ def init_setup(
         "-a",
         help="Vault 서버 주소",
     ),
-    use_1password: bool = typer.Option(
-        True,
-        "--1password/--no-1password",
-        help="1Password 연동 사용",
+    use_approle: bool = typer.Option(
+        False,
+        "--approle",
+        help="AppRole 인증 사용 (권장)",
+    ),
+    use_token: bool = typer.Option(
+        False,
+        "--token",
+        help="토큰 직접 입력 사용",
     ),
     setup_timer: bool = typer.Option(
         True,
@@ -39,13 +44,17 @@ def init_setup(
 ):
     """vaultctl 초기 설정 마법사.
 
-    대화형으로 Vault 연결, 토큰, systemd 타이머를 설정합니다.
+    대화형으로 Vault 연결, 인증, systemd 타이머를 설정합니다.
+    
+    인증 방법:
+    - AppRole (권장): 토큰 만료 시 자동 재발급
+    - Token: 직접 토큰 입력 (만료 시 수동 갱신 필요)
     """
     console.print(Panel.fit(
         "[bold blue]vaultctl 초기 설정[/bold blue]\n\n"
         "이 마법사가 다음을 설정합니다:\n"
         "• Vault 서버 연결\n"
-        "• 인증 토큰 (1Password 또는 직접 입력)\n"
+        "• 인증 (AppRole 또는 토큰)\n"
         "• systemd 자동 갱신 타이머",
         title="🔐 Setup Wizard",
     ))
@@ -73,38 +82,78 @@ def init_setup(
 
     console.print("[green]✓[/green] Vault 서버 연결 성공")
 
-    # 2. 토큰 설정
+    # 2. 인증 방법 선택
+    if not use_approle and not use_token:
+        console.print("\n[bold]인증 방법 선택[/bold]")
+        console.print("  1. AppRole (권장) - 토큰 만료 시 자동 재발급")
+        console.print("  2. Token - 직접 입력 (만료 시 수동 갱신)")
+        
+        choice = Prompt.ask(
+            "\n선택",
+            choices=["1", "2"],
+            default="1",
+        )
+        use_approle = choice == "1"
+        use_token = choice == "2"
+
     vault_token = None
+    role_id = None
+    secret_id = None
 
-    if use_1password and is_op_installed():
-        if is_op_signed_in():
-            console.print("\n[dim]1Password에서 토큰 로드 시도...[/dim]")
-            vault_token = get_vault_token_from_op()
-            if vault_token:
-                console.print("[green]✓[/green] 1Password에서 토큰 로드 성공")
-        else:
-            console.print("[yellow]![/yellow] 1Password 로그인이 필요합니다.")
-            console.print("  실행: eval $(op signin)")
-
-    if not vault_token:
+    if use_approle:
+        # AppRole 인증
+        console.print("\n[bold]AppRole 인증 설정[/bold]")
+        console.print("[dim]Vault 관리자가 제공한 Role ID와 Secret ID를 입력하세요.[/dim]")
+        
+        role_id = Prompt.ask("Role ID")
+        secret_id = Prompt.ask("Secret ID", password=True)
+        
+        # AppRole 로그인 테스트
+        console.print("\n[dim]AppRole 인증 테스트 중...[/dim]")
+        try:
+            result = client.approle_login(role_id, secret_id, settings.approle_mount)
+            vault_token = result.get("auth", {}).get("client_token")
+            
+            if not vault_token:
+                console.print("[red]✗[/red] AppRole 로그인 응답에 토큰이 없습니다.")
+                raise typer.Exit(1)
+            
+            console.print("[green]✓[/green] AppRole 인증 성공")
+            
+            # 토큰 정보 표시
+            auth_data = result.get("auth", {})
+            console.print(f"  Policies: {', '.join(auth_data.get('policies', []))}")
+            ttl = auth_data.get("lease_duration", 0)
+            console.print(f"  TTL: {ttl}초 ({ttl // 3600}시간)")
+            
+        except VaultError as e:
+            console.print(f"[red]✗[/red] AppRole 인증 실패: {e.message}")
+            raise typer.Exit(1)
+    
+    else:
+        # 토큰 직접 입력
         vault_token = Prompt.ask(
             "\nVault 토큰을 입력하세요",
             password=True,
         )
 
-    # 토큰 검증
-    client = VaultClient(addr=vault_addr, token=vault_token)
-    try:
-        token_info = client.token_lookup()
-        console.print("[green]✓[/green] 토큰 검증 성공")
+        # 토큰 검증
+        client = VaultClient(addr=vault_addr, token=vault_token)
+        try:
+            token_info = client.token_lookup()
+            console.print("[green]✓[/green] 토큰 검증 성공")
 
-        data = token_info.get("data", {})
-        console.print(f"  Policies: {', '.join(data.get('policies', []))}")
-        ttl = data.get("ttl", 0)
-        console.print(f"  TTL: {'무제한' if ttl == 0 else f'{ttl}초'}")
-    except VaultError as e:
-        console.print(f"[red]✗[/red] 토큰 검증 실패: {e.message}")
-        raise typer.Exit(1)
+            data = token_info.get("data", {})
+            console.print(f"  Policies: {', '.join(data.get('policies', []))}")
+            ttl = data.get("ttl", 0)
+            console.print(f"  TTL: {'무제한' if ttl == 0 else f'{ttl}초 ({ttl // 3600}시간)'}")
+            
+            if ttl > 0 and ttl < 86400:
+                console.print("[yellow]![/yellow] TTL이 짧습니다. AppRole 사용을 권장합니다.")
+                
+        except VaultError as e:
+            console.print(f"[red]✗[/red] 토큰 검증 실패: {e.message}")
+            raise typer.Exit(1)
 
     # 3. 환경 파일 생성
     env_file = Path("/etc/vaultctl/env")
@@ -114,10 +163,10 @@ def init_setup(
         if not Confirm.ask("\n/etc/vaultctl/env가 이미 존재합니다. 덮어쓰시겠습니까?"):
             console.print("[dim]환경 파일 유지[/dim]")
         else:
-            _write_env_file(env_file, vault_addr, vault_token)
+            _write_env_file(env_file, vault_addr, vault_token, role_id, secret_id)
     else:
         if os.geteuid() == 0:
-            _write_env_file(env_file, vault_addr, vault_token)
+            _write_env_file(env_file, vault_addr, vault_token, role_id, secret_id)
         else:
             console.print("\n[yellow]![/yellow] 환경 파일 생성에 root 권한이 필요합니다.")
             console.print("  수동 생성:")
@@ -139,14 +188,29 @@ def init_setup(
 
     # 5. 완료
     console.print("\n")
-    console.print(Panel.fit(
-        "[bold green]설정 완료![/bold green]\n\n"
-        "다음 명령어를 사용해보세요:\n"
-        "  vaultctl auth status    # 인증 상태 확인\n"
-        "  vaultctl lxc list       # LXC 목록\n"
-        "  vaultctl --help         # 전체 도움말",
-        title="✓ Complete",
-    ))
+    
+    if use_approle:
+        console.print(Panel.fit(
+            "[bold green]설정 완료![/bold green]\n\n"
+            "AppRole 인증이 설정되었습니다.\n"
+            "토큰이 만료되면 자동으로 재발급됩니다.\n\n"
+            "다음 명령어를 사용해보세요:\n"
+            "  vaultctl auth status    # 인증 상태 확인\n"
+            "  vaultctl lxc list       # LXC 목록\n"
+            "  vaultctl --help         # 전체 도움말",
+            title="✓ Complete",
+        ))
+    else:
+        console.print(Panel.fit(
+            "[bold green]설정 완료![/bold green]\n\n"
+            "토큰 인증이 설정되었습니다.\n"
+            "[yellow]토큰 만료 시 수동 갱신이 필요합니다.[/yellow]\n\n"
+            "다음 명령어를 사용해보세요:\n"
+            "  vaultctl auth status    # 인증 상태 확인\n"
+            "  vaultctl lxc list       # LXC 목록\n"
+            "  vaultctl --help         # 전체 도움말",
+            title="✓ Complete",
+        ))
 
 
 @app.command("systemd")
@@ -228,8 +292,6 @@ def show_env(
 @app.command("test")
 def test_connection():
     """Vault 연결 및 인증 테스트."""
-    from vaultctl.commands.auth import ensure_authenticated
-
     console.print("[bold]연결 테스트[/bold]\n")
 
     # 1. 서버 연결
@@ -263,20 +325,50 @@ def test_connection():
     console.print("\n[green]✓[/green] 테스트 완료")
 
 
-def _write_env_file(path: Path, vault_addr: str, vault_token: str) -> None:
+def _write_env_file(
+    path: Path,
+    vault_addr: str,
+    vault_token: Optional[str],
+    role_id: Optional[str] = None,
+    secret_id: Optional[str] = None,
+) -> None:
     """환경 파일 생성."""
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    content = f"""# vaultctl 환경 설정
+    if role_id and secret_id:
+        # AppRole 인증
+        content = f"""# vaultctl 환경 설정
 # Generated by vaultctl setup init
 
+# Vault 서버
 VAULT_ADDR={vault_addr}
-VAULT_TOKEN={vault_token}
-
 VAULTCTL_VAULT_ADDR={vault_addr}
+
+# AppRole 인증 (토큰 만료 시 자동 재발급)
+VAULTCTL_APPROLE_ROLE_ID={role_id}
+VAULTCTL_APPROLE_SECRET_ID={secret_id}
+
+# 토큰 갱신 설정
 VAULTCTL_TOKEN_RENEW_THRESHOLD=3600
 VAULTCTL_TOKEN_RENEW_INCREMENT=86400
 """
+    else:
+        # 토큰 인증
+        content = f"""# vaultctl 환경 설정
+# Generated by vaultctl setup init
+
+# Vault 서버
+VAULT_ADDR={vault_addr}
+VAULTCTL_VAULT_ADDR={vault_addr}
+
+# 토큰 인증
+VAULT_TOKEN={vault_token}
+
+# 토큰 갱신 설정
+VAULTCTL_TOKEN_RENEW_THRESHOLD=3600
+VAULTCTL_TOKEN_RENEW_INCREMENT=86400
+"""
+    
     path.write_text(content)
     path.chmod(0o600)
     console.print(f"[green]✓[/green] 환경 파일 생성: {path}")

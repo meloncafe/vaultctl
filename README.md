@@ -1,6 +1,6 @@
 # vaultctl
 
-HashiCorp Vault CLI with 1Password integration.
+HashiCorp Vault CLI with AppRole authentication.
 
 Proxmox LXC 컨테이너의 비밀번호/URL, Docker 환경변수를 Vault로 중앙 관리하는 CLI 도구입니다.
 
@@ -31,7 +31,7 @@ Proxmox LXC 컨테이너의 비밀번호/URL, Docker 환경변수를 Vault로 �
 
 ## 특징
 
-- 🔐 **1Password CLI 연동**: Touch ID/Face ID로 간편 인증 (데스크탑)
+- 🔐 **AppRole 인증**: 토큰 만료 시 자동 재발급 (서버용 권장)
 - 📦 **LXC 관리**: 비밀번호, IP, 설정 정보 중앙 관리
 - 🐳 **Docker 지원**: .env 파일 자동 생성, docker-compose 연동
 - 🔄 **토큰 자동 갱신**: systemd timer로 서버에서 자동화
@@ -53,10 +53,10 @@ Proxmox LXC 컨테이너의 비밀번호/URL, Docker 환경변수를 Vault로 �
 │                                                                         │
 │  ┌─────────────┐                                                        │
 │  │  개발 머신   │                                                        │
-│  │  (macOS)    │                                                        │
+│  │  (빌드용)   │                                                        │
 │  │             │                                                        │
-│  │ vaultctl    │◄──── 1Password CLI (Touch ID)                         │
-│  │ + op CLI    │                                                        │
+│  │ vaultctl    │                                                        │
+│  │ build-deb   │                                                        │
 │  └──────┬──────┘                                                        │
 │         │                                                               │
 │         │ ./build-deb.sh                                                │
@@ -76,10 +76,10 @@ Proxmox LXC 컨테이너의 비밀번호/URL, Docker 환경변수를 Vault로 �
 │   │  130-n8n   │      │  180-db    │      │  170-sig   │              │
 │   │            │      │            │      │            │              │
 │   │ vaultctl   │      │ vaultctl   │      │ vaultctl   │              │
-│   │ (deb)      │      │ (deb)      │      │ (deb)      │              │
+│   │ (AppRole)  │      │ (AppRole)  │      │ (AppRole)  │              │
 │   │            │      │            │      │            │              │
-│   │ systemd    │      │ systemd    │      │ systemd    │              │
-│   │ timer      │      │ timer      │      │ timer      │              │
+│   │ 토큰 만료시│      │ 토큰 만료시│      │ 토큰 만료시│              │
+│   │ 자동 재발급│      │ 자동 재발급│      │ 자동 재발급│              │
 │   └─────┬──────┘      └─────┬──────┘      └─────┬──────┘              │
 │         │                   │                   │                     │
 │         └───────────────────┼───────────────────┘                     │
@@ -121,7 +121,7 @@ sudo apt update && sudo apt upgrade vaultctl
 
 ```bash
 # 1. GPG 키 추가
-curl -fsSL -u apt:PASSWORD https://apt.example.com/key.gpg | \
+curl -fsSL -u apt:PASSWORD https://apt.example.com/KEY.gpg | \
     sudo gpg --dearmor -o /usr/share/keyrings/internal-apt.gpg
 
 # 2. 인증 설정 (프라이빗 저장소인 경우)
@@ -170,6 +170,77 @@ sudo apt install ./dist/vaultctl_*.deb
 
 ## 초기 설정
 
+### 사전 준비: Vault AppRole 설정 (관리자)
+
+vaultctl은 **AppRole 인증**을 권장합니다. 토큰이 만료되어도 자동으로 재발급됩니다.
+
+#### 1. Vault Policy 생성
+
+```bash
+# Vault 서버에서 실행
+cat > vaultctl-policy.hcl << 'EOF'
+# KV v2 시크릿 엔진 읽기/쓰기
+path "proxmox/data/*" {
+  capabilities = ["create", "read", "update", "delete", "list"]
+}
+
+path "proxmox/metadata/*" {
+  capabilities = ["list", "read", "delete"]
+}
+
+# 토큰 자체 정보 조회 및 갱신
+path "auth/token/lookup-self" {
+  capabilities = ["read"]
+}
+
+path "auth/token/renew-self" {
+  capabilities = ["update"]
+}
+EOF
+
+vault policy write vaultctl vaultctl-policy.hcl
+```
+
+> **참고**: `proxmox`는 KV 엔진 마운트 경로입니다. 환경에 맞게 변경하세요.
+
+#### 2. AppRole 활성화 및 Role 생성
+
+```bash
+# AppRole 인증 활성화 (최초 1회)
+vault auth enable approle
+
+# vaultctl용 Role 생성
+vault write auth/approle/role/vaultctl \
+  token_policies="vaultctl" \
+  token_ttl=1h \
+  token_max_ttl=4h \
+  secret_id_ttl=0 \
+  secret_id_num_uses=0
+```
+
+| 설정 | 값 | 설명 |
+|------|-----|------|
+| `token_ttl` | 1h | 발급된 토큰의 기본 TTL |
+| `token_max_ttl` | 4h | 토큰 최대 TTL |
+| `secret_id_ttl` | 0 | Secret ID 만료 없음 |
+| `secret_id_num_uses` | 0 | Secret ID 사용 횟수 제한 없음 |
+
+#### 3. Role ID와 Secret ID 발급
+
+```bash
+# Role ID 조회 (서버별로 동일하게 사용 가능)
+vault read auth/approle/role/vaultctl/role-id
+# 예: role_id = "xxxx-xxxx-xxxx"
+
+# Secret ID 생성 (서버별로 다르게 발급 권장)
+vault write -f auth/approle/role/vaultctl/secret-id
+# 예: secret_id = "yyyy-yyyy-yyyy"
+```
+
+> **보안 팁**: Secret ID는 서버별로 다르게 발급하면, 특정 서버의 인증만 취소할 수 있습니다.
+
+---
+
 ### 방법 1: 설정 마법사 (권장)
 
 ```bash
@@ -178,7 +249,8 @@ sudo vaultctl setup init
 
 대화형으로 다음을 설정합니다:
 - Vault 서버 주소
-- 인증 토큰 (1Password 또는 직접 입력)
+- 인증 방법 선택 (AppRole 권장)
+- Role ID / Secret ID 입력
 - systemd 자동 갱신 타이머
 
 ### 방법 2: 수동 설정
@@ -192,7 +264,23 @@ sudo chmod 600 /etc/vaultctl/env
 sudo nano /etc/vaultctl/env
 ```
 
-`/etc/vaultctl/env` 내용:
+**AppRole 인증** (`/etc/vaultctl/env`):
+
+```bash
+# Vault 서버 주소
+VAULT_ADDR=https://vault.example.com
+VAULTCTL_VAULT_ADDR=https://vault.example.com
+
+# AppRole 인증 (토큰 만료 시 자동 재발급)
+VAULTCTL_APPROLE_ROLE_ID=xxxx-xxxx-xxxx
+VAULTCTL_APPROLE_SECRET_ID=yyyy-yyyy-yyyy
+
+# 토큰 갱신 설정 (선택)
+VAULTCTL_TOKEN_RENEW_THRESHOLD=3600    # TTL이 1시간 미만이면 갱신
+VAULTCTL_TOKEN_RENEW_INCREMENT=86400   # 24시간 연장
+```
+
+**토큰 직접 입력** (비권장, 토큰 만료 시 수동 갱신 필요):
 
 ```bash
 # Vault 서버 주소
@@ -215,18 +303,25 @@ sudo systemctl enable --now vaultctl-renew.timer
 vaultctl setup test
 ```
 
+### 인증 방법 비교
+
+| 방법 | 토큰 만료 시 | 서버 재시작 후 | 권장 환경 |
+|------|-------------|---------------|----------|
+| **AppRole** (권장) | 자동 재발급 | 정상 작동 | 서버, LXC, CI/CD |
+| Token 직접 입력 | 수동 갱신 필요 | TTL 내 정상 | 데스크탑, 테스트 |
+
 ### 환경 변수 전체 목록
 
 | 변수 | 기본값 | 설명 |
 |------|--------|------|
 | `VAULTCTL_VAULT_ADDR` | `https://vault.example.com` | Vault 서버 주소 |
 | `VAULTCTL_VAULT_TOKEN` | - | Vault 토큰 (또는 `VAULT_TOKEN`) |
+| `VAULTCTL_APPROLE_ROLE_ID` | - | AppRole Role ID |
+| `VAULTCTL_APPROLE_SECRET_ID` | - | AppRole Secret ID |
+| `VAULTCTL_APPROLE_MOUNT` | `approle` | AppRole 인증 마운트 경로 |
 | `VAULTCTL_KV_MOUNT` | `proxmox` | KV 시크릿 엔진 마운트 경로 |
 | `VAULTCTL_KV_LXC_PATH` | `lxc` | LXC 시크릿 경로 |
 | `VAULTCTL_KV_DOCKER_PATH` | `docker` | Docker 시크릿 경로 |
-| `VAULTCTL_OP_VAULT` | `Infrastructure` | 1Password Vault 이름 |
-| `VAULTCTL_OP_ITEM` | `vault-token` | 1Password 항목 이름 |
-| `VAULTCTL_OP_FIELD` | `credential` | 1Password 필드 이름 |
 | `VAULTCTL_TOKEN_RENEW_THRESHOLD` | `3600` | 갱신 임계값 (초) |
 | `VAULTCTL_TOKEN_RENEW_INCREMENT` | `86400` | 갱신 시 연장 시간 (초) |
 
@@ -237,8 +332,11 @@ vaultctl setup test
 ### 인증 (auth)
 
 ```bash
-# 1Password에서 토큰 로드 (데스크탑용, Touch ID)
-vaultctl auth login
+# AppRole 인증 (서버용 권장)
+vaultctl auth login --approle
+
+# 토큰 직접 입력
+vaultctl auth login --token hvs.xxx
 
 # 인증 상태 및 서버 상태 확인
 vaultctl auth status
@@ -877,7 +975,7 @@ sudo nano /etc/vaultctl/env  # 토큰 직접 업데이트
 ```bash
 # GPG 키 문제
 sudo rm /usr/share/keyrings/internal-apt.gpg
-curl -fsSL -u apt:PASS https://apt.example.com/key.gpg | \
+curl -fsSL -u apt:PASS https://apt.example.com/KEY.gpg | \
     sudo gpg --dearmor -o /usr/share/keyrings/internal-apt.gpg
 
 # 인증 문제

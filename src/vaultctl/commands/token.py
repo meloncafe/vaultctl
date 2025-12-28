@@ -7,23 +7,26 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from vaultctl.config import settings
-from vaultctl.onepassword import get_vault_token_from_op, save_vault_token_to_op
-from vaultctl.vault_client import VaultError
-from vaultctl.utils import format_duration
 from vaultctl.commands.auth import ensure_authenticated
+from vaultctl.config import settings
+from vaultctl.utils import format_duration
+from vaultctl.vault_client import VaultError
 
 app = typer.Typer(help="토큰 관리")
 console = Console()
 
 
+def _get_auth_client():
+    """인증된 VaultClient 반환."""
+    client = ensure_authenticated()
+    return client
+
+
 @app.command("info")
 def token_info():
     """현재 토큰 상세 정보."""
-    client = ensure_authenticated()
-
     try:
-        result = client.token_lookup()
+        result = _get_auth_client().token_lookup()
         data = result.get("data", {})
 
         table = Table(show_header=False, box=None)
@@ -99,11 +102,9 @@ def token_renew(
     토큰의 TTL을 연장합니다. 토큰 자체는 변경되지 않으므로
     1Password에 다시 저장할 필요가 없습니다.
     """
-    client = ensure_authenticated()
-
     # 현재 토큰 정보 확인
     try:
-        lookup = client.token_lookup()
+        lookup = _get_auth_client().token_lookup()
         data = lookup.get("data", {})
 
         if not data.get("renewable"):
@@ -125,7 +126,7 @@ def token_renew(
     # 갱신
     try:
         inc = increment or settings.token_renew_increment
-        result = client.token_renew(increment=inc)
+        result = _get_auth_client().token_renew(increment=inc)
         auth = result.get("auth", {})
         new_ttl = auth.get("lease_duration", 0)
 
@@ -158,17 +159,10 @@ def token_create(
         "-n",
         help="토큰 표시 이름",
     ),
-    save_to_op: bool = typer.Option(
-        False,
-        "--save-to-1password",
-        help="생성된 토큰을 1Password에 저장",
-    ),
 ):
     """새 토큰 생성."""
-    client = ensure_authenticated()
-
     try:
-        result = client.token_create(
+        result = _get_auth_client().token_create(
             policies=policies,
             ttl=ttl,
             display_name=display_name,
@@ -185,18 +179,9 @@ def token_create(
         console.print(f"  Policies: {', '.join(auth.get('policies', []))}")
         console.print(f"  TTL: {format_duration(auth.get('lease_duration', 0))}")
         console.print(f"  Renewable: {'예' if auth.get('renewable') else '아니오'}")
-
-        if save_to_op:
-            console.print("")
-            console.print("[dim]1Password에 저장 중...[/dim]")
-            if save_vault_token_to_op(new_token):
-                console.print("[green]✓[/green] 1Password에 저장 완료")
-            else:
-                console.print("[red]✗[/red] 1Password 저장 실패. 수동으로 저장하세요.")
-        else:
-            console.print("")
-            console.print("[yellow]⚠[/yellow] 이 토큰을 안전한 곳에 저장하세요!")
-            console.print("  1Password 저장: vaultctl token create --save-to-1password")
+        console.print("")
+        console.print("[yellow]⚠[/yellow] 이 토큰을 안전한 곳에 저장하세요!")
+        console.print("  1Password 저장: vaultctl token create --save-to-1password")
 
     except VaultError as e:
         console.print(f"[red]✗[/red] 생성 실패: {e.message}")
@@ -210,10 +195,8 @@ def token_check():
     cron이나 systemd timer에서 사용할 수 있습니다.
     갱신이 필요하면 exit code 1을 반환합니다.
     """
-    client = ensure_authenticated()
-
     try:
-        result = client.token_lookup()
+        result = _get_auth_client().token_lookup()
         data = result.get("data", {})
 
         ttl = data.get("ttl", 0)
@@ -272,10 +255,8 @@ def token_auto_renew(
         OnCalendar=hourly
         Persistent=true
     """
-    client = ensure_authenticated()
-
     try:
-        result = client.token_lookup()
+        result = _get_auth_client().token_lookup()
         data = result.get("data", {})
 
         ttl = data.get("ttl", 0)
@@ -300,7 +281,7 @@ def token_auto_renew(
             raise typer.Exit(0)
 
         # 갱신 실행
-        result = client.token_renew(increment=increment)
+        result = _get_auth_client().token_renew(increment=increment)
         auth = result.get("auth", {})
         new_ttl = auth.get("lease_duration", 0)
 

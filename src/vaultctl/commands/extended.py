@@ -8,10 +8,13 @@ vaultctl 확장 기능 (teller 영감)
 - vaultctl sh: 셸 통합용 export 생성
 - vaultctl watch: 비밀 변경 감지 및 자동 재시작
 """
-
+import hashlib
+import json
 import os
-import sys
+import signal
 import subprocess
+import sys
+import time
 from pathlib import Path
 from typing import Optional, List
 
@@ -53,9 +56,9 @@ def _list_docker_services() -> list[str]:
         return []
 
 
-# =============================================================================
+# ─────────────────────────────────────────────────────────────────────────────
 # vaultctl run - 환경변수 주입하며 프로세스 실행
-# =============================================================================
+# ─────────────────────────────────────────────────────────────────────────────
 
 def run_command(
     service: str = typer.Argument(..., help="Docker 서비스명 또는 LXC 이름"),
@@ -105,13 +108,13 @@ def run_command(
     raise typer.Exit(result.returncode)
 
 
-# =============================================================================
+# ─────────────────────────────────────────────────────────────────────────────
 # vaultctl sh - 셸 통합용 export 생성
-# =============================================================================
+# ─────────────────────────────────────────────────────────────────────────────
 
 def shell_export(
     service: str = typer.Argument(..., help="Docker 서비스명"),
-    format: str = typer.Option("bash", "--format", "-f", help="출력 형식: bash, fish, zsh"),
+    _format: str = typer.Option("bash", "--format", "-f", help="출력 형식: bash, fish, zsh"),
 ):
     """
     셸에서 eval로 사용할 export 문 생성.
@@ -131,15 +134,15 @@ def shell_export(
         # 값 이스케이프
         escaped = str(value).replace("'", "'\"'\"'")
         
-        if format == "fish":
+        if _format == "fish":
             print(f"set -gx {key} '{escaped}'")
         else:
             print(f"export {key}='{escaped}'")
 
 
-# =============================================================================
+# ─────────────────────────────────────────────────────────────────────────────
 # vaultctl scan - 코드에서 비밀 검색
-# =============================================================================
+# ─────────────────────────────────────────────────────────────────────────────
 
 def scan_secrets(
     path: Path = typer.Argument(".", help="스캔할 경로"),
@@ -216,7 +219,6 @@ def scan_secrets(
     
     # 결과 출력
     if json_output:
-        import json
         print(json.dumps(findings, indent=2))
     else:
         if findings:
@@ -232,9 +234,9 @@ def scan_secrets(
         raise typer.Exit(1)
 
 
-# =============================================================================
+# ─────────────────────────────────────────────────────────────────────────────
 # vaultctl redact - 로그에서 비밀 마스킹
-# =============================================================================
+# ─────────────────────────────────────────────────────────────────────────────
 
 def redact_secrets(
     input_file: Optional[Path] = typer.Option(None, "--in", "-i", help="입력 파일 (없으면 stdin)"),
@@ -293,9 +295,9 @@ def redact_secrets(
             print(redact_line(line.rstrip("\n")))
 
 
-# =============================================================================
+# ─────────────────────────────────────────────────────────────────────────────
 # vaultctl watch - 비밀 변경 감지 및 자동 재시작
-# =============================================================================
+# ─────────────────────────────────────────────────────────────────────────────
 
 def watch_and_restart(
     service: str = typer.Argument(..., help="감시할 서비스"),
@@ -315,10 +317,6 @@ def watch_and_restart(
         ExecStart=/usr/bin/vaultctl watch n8n -- docker-compose -f /opt/n8n/docker-compose.yml up -d
         Restart=always
     """
-    import hashlib
-    import time
-    import signal
-    
     def get_secrets_hash():
         data = _get_docker_secrets(service)
         if not data:
@@ -327,7 +325,7 @@ def watch_and_restart(
         return hashlib.sha256(content.encode()).hexdigest()
     
     current_hash = get_secrets_hash()
-    process = None
+    process: Optional[subprocess.Popen] = None
     
     def start_process():
         nonlocal process
@@ -342,19 +340,22 @@ def watch_and_restart(
     
     def restart_process():
         nonlocal process
-        if process:
+        _proc = process  # 로컬 변수에 캡처하여 타입 좁히기
+        if _proc is not None:
             console.print("[yellow]⟳[/yellow] 프로세스 재시작 중...")
-            process.terminate()
+            _proc.terminate()
             try:
-                process.wait(timeout=10)
+                _proc.wait(timeout=10)
             except subprocess.TimeoutExpired:
-                process.kill()
+                _proc.kill()
         start_process()
     
     def signal_handler(sig, frame):
+        nonlocal process
         console.print("\n[red]중단됨[/red]")
-        if process:
-            process.terminate()
+        _proc = process
+        if _proc is not None:
+            _proc.terminate()
         sys.exit(0)
     
     signal.signal(signal.SIGINT, signal_handler)
@@ -376,12 +377,14 @@ def watch_and_restart(
             if on_change == "restart":
                 restart_process()
             elif on_change == "reload":
-                if process:
-                    process.send_signal(signal.SIGHUP)
+                proc = process
+                if proc is not None:
+                    proc.send_signal(signal.SIGHUP)
             elif on_change == "exec":
                 subprocess.run(command)
         
         # 프로세스 상태 확인
-        if process and process.poll() is not None:
+        proc = process
+        if proc is not None and proc.poll() is not None:
             console.print("[red]프로세스 종료됨, 재시작...[/red]")
             start_process()

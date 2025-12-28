@@ -20,7 +20,6 @@ a = Analysis(
         "vaultctl.cli",
         "vaultctl.config",
         "vaultctl.vault_client",
-        "vaultctl.onepassword",
         "vaultctl.utils",
         "vaultctl.commands",
         "vaultctl.commands.auth",

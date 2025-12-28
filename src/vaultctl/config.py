@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     )
     vault_token: Optional[str] = Field(
         default=None,
-        description="Vault 토큰 (환경변수 또는 1Password에서 로드)",
+        description="Vault 토큰",
     )
     vault_namespace: Optional[str] = Field(
         default=None,
@@ -36,18 +36,18 @@ class Settings(BaseSettings):
         description="TLS 인증서 검증 스킵",
     )
 
-    # 1Password 설정
-    op_vault: str = Field(
-        default="Infrastructure",
-        description="1Password Vault 이름",
+    # AppRole 설정
+    approle_role_id: Optional[str] = Field(
+        default=None,
+        description="AppRole Role ID",
     )
-    op_item: str = Field(
-        default="vault-token",
-        description="1Password Item 이름",
+    approle_secret_id: Optional[str] = Field(
+        default=None,
+        description="AppRole Secret ID",
     )
-    op_field: str = Field(
-        default="credential",
-        description="1Password 필드 이름",
+    approle_mount: str = Field(
+        default="approle",
+        description="AppRole 인증 마운트 경로",
     )
 
     # KV 경로 설정
@@ -101,6 +101,10 @@ class Settings(BaseSettings):
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         # 캐시 디렉토리 권한 설정
         self.cache_dir.chmod(0o700)
+
+    def has_approle_credentials(self) -> bool:
+        """AppRole 자격 증명이 있는지 확인."""
+        return bool(self.approle_role_id and self.approle_secret_id)
 
 
 # 전역 설정 인스턴스

@@ -37,7 +37,7 @@ class VaultClient:
     def client(self) -> httpx.Client:
         """HTTP 클라이언트 (lazy initialization)."""
         if self._client is None:
-            headers = {}
+            headers: dict[str, str] = {}
             if self.token:
                 headers["X-Vault-Token"] = self.token
             if self.namespace:
@@ -49,7 +49,11 @@ class VaultClient:
                 verify=not settings.vault_skip_verify,
                 timeout=30.0,
             )
-        return self._client
+
+        # 타입 체커를 위한 로컬 변수 사용
+        client = self._client
+        assert client is not None
+        return client
 
     def _request(
         self,
@@ -59,8 +63,9 @@ class VaultClient:
         params: Optional[dict] = None,
     ) -> dict[str, Any]:
         """API 요청 실행."""
+        http_client = self.client  # 로컬 변수로 타입 좁히기
         try:
-            response = self.client.request(
+            response = http_client.request(
                 method=method,
                 url=f"/v1/{path}",
                 json=data,
@@ -84,7 +89,7 @@ class VaultClient:
 
     def close(self) -> None:
         """클라이언트 종료."""
-        if self._client:
+        if self._client is not None:
             self._client.close()
             self._client = None
 
@@ -120,6 +125,41 @@ class VaultClient:
         if display_name:
             data["display_name"] = display_name
         return self._request("POST", "auth/token/create", data=data)
+
+    def approle_login(
+        self,
+        role_id: str,
+        secret_id: str,
+        mount: str = "approle",
+    ) -> dict[str, Any]:
+        """AppRole 인증으로 토큰 획득.
+
+        Args:
+            role_id: AppRole Role ID
+            secret_id: AppRole Secret ID
+            mount: AppRole 인증 마운트 경로 (기본: approle)
+
+        Returns:
+            인증 응답 (client_token 포함)
+        """
+        # AppRole 로그인은 토큰 없이 요청
+        try:
+            response = httpx.post(
+                f"{self.addr}/v1/auth/{mount}/login",
+                json={"role_id": role_id, "secret_id": secret_id},
+                verify=not settings.vault_skip_verify,
+                timeout=30.0,
+            )
+
+            if response.status_code >= 400:
+                result = response.json() if response.content else {}
+                errors = result.get("errors", [])
+                error_msg = "; ".join(errors) if errors else f"HTTP {response.status_code}"
+                raise VaultError(f"AppRole 로그인 실패: {error_msg}", response.status_code)
+
+            return response.json()
+        except httpx.RequestError as e:
+            raise VaultError(f"AppRole 로그인 연결 실패: {e}") from e
 
     # ─────────────────────────────────────────────────────────────────────────
     # KV v2 Secrets Engine
@@ -181,8 +221,9 @@ class VaultClient:
 
     def health(self) -> dict[str, Any]:
         """서버 상태 확인."""
+        http_client = self.client
         try:
-            response = self.client.get("/v1/sys/health")
+            response = http_client.get("/v1/sys/health")
             return response.json()
         except Exception:
             return {"initialized": False, "sealed": True}
@@ -212,6 +253,6 @@ def set_token(token: str) -> None:
     """토큰 설정 및 클라이언트 재생성."""
     global _client
     settings.vault_token = token
-    if _client:
+    if _client is not None:
         _client.close()
     _client = VaultClient(token=token)
