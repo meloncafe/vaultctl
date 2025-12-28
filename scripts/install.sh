@@ -62,12 +62,19 @@ check_deps() {
 # Get latest version from GitHub / GitHub에서 최신 버전 가져오기
 get_latest_version() {
     local api_url="https://api.github.com/repos/${REPO}/releases/latest"
+    local response
     local version
     
-    version=$(curl -fsSL "$api_url" | jq -r '.tag_name' | sed 's/^v//')
+    response=$(curl -fsSL "$api_url" 2>&1) || {
+        echo "" 
+        return 1
+    }
+    
+    version=$(echo "$response" | jq -r '.tag_name' 2>/dev/null | sed 's/^v//')
     
     if [[ -z "$version" || "$version" == "null" ]]; then
-        error "Failed to get latest version from GitHub"
+        echo ""
+        return 1
     fi
     
     echo "$version"
@@ -75,7 +82,14 @@ get_latest_version() {
 
 # Download and install / 다운로드 및 설치
 install_vaultctl() {
-    local version="${VERSION:-$(get_latest_version)}"
+    local version="${VERSION:-}"
+    
+    if [[ -z "$version" ]]; then
+        version=$(get_latest_version)
+        if [[ -z "$version" ]]; then
+            error "Failed to get latest version from GitHub. No releases found for ${REPO}"
+        fi
+    fi
     local deb_name="${PACKAGE_NAME}_${version}_${ARCH}.deb"
     local download_url="https://github.com/${REPO}/releases/download/v${version}/${deb_name}"
     
@@ -93,6 +107,10 @@ install_vaultctl() {
         error "Downloaded file not found"
     fi
     
+    # Fix permissions for _apt user / _apt 사용자 권한 설정
+    chmod 755 "$TMP_DIR"
+    chmod 644 "${TMP_DIR}/${deb_name}"
+    
     # Install / 설치
     info "Installing package..."
     apt-get install -y "${TMP_DIR}/${deb_name}"
@@ -101,7 +119,7 @@ install_vaultctl() {
     if command -v vaultctl &> /dev/null; then
         local installed_version
         installed_version=$(vaultctl --version 2>/dev/null || echo "unknown")
-        info "Successfully installed vaultctl ${installed_version}"
+        info "Successfully installed ${installed_version}"
     else
         error "Installation failed - vaultctl not found in PATH"
     fi
