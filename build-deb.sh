@@ -257,9 +257,11 @@ EOF
 #!/bin/bash
 set -e
 
-# systemd 리로드
+# systemd 리로드 및 실패 상태 초기화
 if command -v systemctl &> /dev/null; then
     systemctl daemon-reload
+    systemctl reset-failed vaultctl-renew.service 2>/dev/null || true
+    systemctl reset-failed vaultctl-renew.timer 2>/dev/null || true
 fi
 
 # 설정 파일 생성 안내
