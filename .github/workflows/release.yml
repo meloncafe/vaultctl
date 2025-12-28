@@ -158,8 +158,11 @@ jobs:
           cat > scripts/prerm << 'EOF'
           #!/bin/bash
           set -e
-          systemctl stop vaultctl-renew.timer 2>/dev/null || true
-          systemctl disable vaultctl-renew.timer 2>/dev/null || true
+          # 완전 제거 시에만 타이머 비활성화 (업그레이드 시에는 유지)
+          if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
+              systemctl stop vaultctl-renew.timer 2>/dev/null || true
+              systemctl disable vaultctl-renew.timer 2>/dev/null || true
+          fi
           exit 0
           EOF
           
