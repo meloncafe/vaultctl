@@ -7,7 +7,7 @@ from rich.console import Console
 from rich.table import Table
 
 from vaultctl import __version__
-from vaultctl.commands import auth, docker, lxc, setup, token, extended
+from vaultctl.commands import auth, docker, lxc, setup, token, extended, repo
 from vaultctl.config import settings
 
 app = typer.Typer(
@@ -18,12 +18,13 @@ app = typer.Typer(
 )
 console = Console()
 
-# 서브 명령어 등록
-app.add_typer(auth.app, name="auth", help="인증 관리")
-app.add_typer(lxc.app, name="lxc", help="LXC 컨테이너 정보 관리")
-app.add_typer(docker.app, name="docker", help="Docker 환경변수 관리")
-app.add_typer(token.app, name="token", help="토큰 관리")
-app.add_typer(setup.app, name="setup", help="초기 설정 및 systemd 관리")
+# Sub-commands / 서브 명령어 등록
+app.add_typer(auth.app, name="auth", help="Authentication management / 인증 관리")
+app.add_typer(lxc.app, name="lxc", help="LXC container management / LXC 컨테이너 정보 관리")
+app.add_typer(docker.app, name="docker", help="Docker env management / Docker 환경변수 관리")
+app.add_typer(token.app, name="token", help="Token management / 토큰 관리")
+app.add_typer(setup.app, name="setup", help="Setup and configuration / 초기 설정 및 systemd 관리")
+app.add_typer(repo.app, name="repo", help="APT repository management / APT 저장소 관리")
 
 # 확장 명령어 직접 등록 (teller 스타일)
 app.command("run")(extended.run_command)

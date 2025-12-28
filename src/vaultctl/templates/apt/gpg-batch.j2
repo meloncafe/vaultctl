@@ -1,0 +1,13 @@
+{# GPG key generation batch file #}
+{# GPG 키 생성 배치 파일 #}
+%echo Generating APT signing key
+Key-Type: RSA
+Key-Length: 4096
+Subkey-Type: RSA
+Subkey-Length: 4096
+Name-Real: {{ gpg_name }}
+Name-Email: {{ gpg_email }}
+Expire-Date: 0
+%no-protection
+%commit
+%echo Done

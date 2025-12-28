@@ -1,3 +1,17 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# vaultctl - Build and Release Workflow
+# vaultctl - 빌드 및 릴리스 워크플로
+#
+# Triggers / 트리거:
+#   - Push tag matching 'v*' (e.g., v0.1.0)
+#   - Manual workflow dispatch with version input
+#
+# Jobs / 작업:
+#   1. build: Build deb package / deb 패키지 빌드
+#   2. release: Create GitHub release (tags only) / GitHub 릴리스 생성 (태그만)
+#   3. pages: Update APT repository on GitHub Pages / GitHub Pages APT 저장소 업데이트
+# ─────────────────────────────────────────────────────────────────────────────
+
 name: Build and Release
 
 on:
@@ -7,13 +21,17 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to build (e.g., 0.1.0)'
+        description: 'Version to build (e.g., 0.1.0) / 빌드할 버전'
         required: true
 
 env:
   PACKAGE_NAME: vaultctl
 
 jobs:
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Build Job - Compile binary and create deb package
+  # 빌드 작업 - 바이너리 컴파일 및 deb 패키지 생성
+  # ═══════════════════════════════════════════════════════════════════════════
   build:
     runs-on: ubuntu-22.04
     outputs:
@@ -45,6 +63,8 @@ jobs:
       - name: Install dependencies
         run: poetry install --with dev
 
+      # Determine version from tag or manual input
+      # 태그 또는 수동 입력에서 버전 결정
       - name: Get version
         id: version
         run: |
@@ -56,11 +76,15 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "deb_name=${PACKAGE_NAME}_${VERSION}_amd64.deb" >> $GITHUB_OUTPUT
 
+      # Update version in source files
+      # 소스 파일의 버전 업데이트
       - name: Update version
         run: |
           sed -i "s/^version = .*/version = \"${{ steps.version.outputs.version }}\"/" pyproject.toml
           sed -i "s/__version__ = .*/__version__ = \"${{ steps.version.outputs.version }}\"/" src/vaultctl/__init__.py
 
+      # Build standalone binary with PyInstaller
+      # PyInstaller로 독립 실행 바이너리 빌드
       - name: Build binary
         run: |
           poetry run pyinstaller \
@@ -71,6 +95,8 @@ jobs:
             --strip \
             src/vaultctl/cli.py
 
+      # Create package directory structure
+      # 패키지 디렉토리 구조 생성
       - name: Create package structure
         run: |
           mkdir -p pkg-root/usr/bin
@@ -78,104 +104,33 @@ jobs:
           mkdir -p pkg-root/lib/systemd/system
           mkdir -p pkg-root/usr/share/doc/vaultctl
           
+          # Binary / 바이너리
           cp dist/vaultctl pkg-root/usr/bin/
           chmod +x pkg-root/usr/bin/vaultctl
           
-          # Config examples
-          cat > pkg-root/etc/vaultctl/env.example << 'ENVEOF'
-          # vaultctl environment configuration
-          # Copy to /etc/vaultctl/env and edit
+          # Config example from template / 템플릿에서 설정 예제 복사
+          cp packaging/etc/config.example pkg-root/etc/vaultctl/
           
-          VAULT_ADDR=https://vault.example.com
-          VAULTCTL_VAULT_ADDR=https://vault.example.com
-          
-          # AppRole 인증 (권장)
-          # VAULTCTL_APPROLE_ROLE_ID=xxxx-xxxx-xxxx
-          # VAULTCTL_APPROLE_SECRET_ID=yyyy-yyyy-yyyy
-          
-          # 또는 토큰 직접 입력 (비권장)
-          # VAULT_TOKEN=hvs.xxxxxxxxxxxxx
-          
-          VAULTCTL_TOKEN_RENEW_THRESHOLD=3600
-          VAULTCTL_TOKEN_RENEW_INCREMENT=86400
-          ENVEOF
-          
-          # systemd files
+          # systemd unit files / systemd 유닛 파일
           cp systemd/vaultctl-renew.service pkg-root/lib/systemd/system/
           cp systemd/vaultctl-renew.timer pkg-root/lib/systemd/system/
           
-          # Docs
+          # Documentation / 문서
           cp README.md pkg-root/usr/share/doc/vaultctl/
 
-      - name: Create maintainer scripts
+      # Copy maintainer scripts from templates
+      # 템플릿에서 maintainer 스크립트 복사
+      - name: Prepare maintainer scripts
         run: |
           mkdir -p scripts
-          
-          cat > scripts/preinst << 'EOF'
-          #!/bin/bash
-          set -e
-          # 업그레이드 시 기존 systemd 파일 삭제 (새 버전으로 교체 보장)
-          if [ "$1" = "upgrade" ] || [ "$1" = "install" ]; then
-              rm -f /lib/systemd/system/vaultctl-renew.service
-              rm -f /lib/systemd/system/vaultctl-renew.timer
-          fi
-          exit 0
-          EOF
-          
-          cat > scripts/postinst << 'EOF'
-          #!/bin/bash
-          set -e
-          if command -v systemctl &> /dev/null; then
-              systemctl daemon-reload
-              systemctl reset-failed vaultctl-renew.service 2>/dev/null || true
-              systemctl reset-failed vaultctl-renew.timer 2>/dev/null || true
-              
-              # 설정 파일이 존재하면 timer 활성화 및 서비스 실행
-              if [[ -f /etc/vaultctl/env ]]; then
-                  systemctl enable vaultctl-renew.timer 2>/dev/null || true
-                  systemctl start vaultctl-renew.timer 2>/dev/null || true
-                  systemctl start vaultctl-renew.service 2>/dev/null || true
-              fi
-          fi
-          # 설정 파일 생성 안내 (초기 설치 시)
-          if [[ ! -f /etc/vaultctl/env ]]; then
-              echo ""
-              echo "╔═══════════════════════════════════════════════════════════╗"
-              echo "║  vaultctl installed successfully!                         ║"
-              echo "╠═══════════════════════════════════════════════════════════╣"
-              echo "║  Quick setup:                                             ║"
-              echo "║    sudo vaultctl setup init                               ║"
-              echo "║                                                           ║"
-              echo "║  Or manual:                                               ║"
-              echo "║    sudo cp /etc/vaultctl/env.example /etc/vaultctl/env    ║"
-              echo "║    sudo chmod 600 /etc/vaultctl/env                       ║"
-              echo "║    sudo nano /etc/vaultctl/env                            ║"
-              echo "║    sudo systemctl enable --now vaultctl-renew.timer       ║"
-              echo "╚═══════════════════════════════════════════════════════════╝"
-          fi
-          EOF
-          
-          cat > scripts/prerm << 'EOF'
-          #!/bin/bash
-          set -e
-          # 완전 제거 시에만 타이머 비활성화 (업그레이드 시에는 유지)
-          if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
-              systemctl stop vaultctl-renew.timer 2>/dev/null || true
-              systemctl disable vaultctl-renew.timer 2>/dev/null || true
-          fi
-          exit 0
-          EOF
-          
-          cat > scripts/postrm << 'EOF'
-          #!/bin/bash
-          set -e
-          systemctl daemon-reload 2>/dev/null || true
-          [[ "$1" = "purge" ]] && rm -rf /etc/vaultctl
-          exit 0
-          EOF
-          
+          cp packaging/scripts/preinst scripts/
+          cp packaging/scripts/postinst scripts/
+          cp packaging/scripts/prerm scripts/
+          cp packaging/scripts/postrm scripts/
           chmod +x scripts/*
 
+      # Build deb package with fpm
+      # fpm으로 deb 패키지 빌드
       - name: Build deb package
         run: |
           fpm \
@@ -189,6 +144,7 @@ jobs:
             --url "https://github.com/${{ github.repository }}" \
             --license "MIT" \
             --depends "ca-certificates" \
+            --config-files /etc/vaultctl/config.example \
             --before-install scripts/preinst \
             --after-install scripts/postinst \
             --before-remove scripts/prerm \
@@ -197,6 +153,8 @@ jobs:
             --chdir pkg-root \
             .
 
+      # Upload artifact for other jobs
+      # 다른 작업용 아티팩트 업로드
       - name: Upload artifact
         uses: actions/upload-artifact@v6
         with:
@@ -204,7 +162,10 @@ jobs:
           path: ${{ steps.version.outputs.deb_name }}
           retention-days: 30
 
-  # GitHub Releases에 업로드
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Release Job - Create GitHub Release (only on tag push)
+  # 릴리스 작업 - GitHub 릴리스 생성 (태그 푸시 시에만)
+  # ═══════════════════════════════════════════════════════════════════════════
   release:
     needs: build
     runs-on: ubuntu-22.04
@@ -233,27 +194,27 @@ jobs:
             scripts/install.sh
           generate_release_notes: true
           body: |
-            ## Installation
-            
-            ### Quick install (recommended)
+            ## Installation / 설치
+
+            ### Quick install (recommended) / 빠른 설치 (권장)
             ```bash
             curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/scripts/install.sh | sudo bash
             ```
-            
-            ### Manual install
+
+            ### Manual install / 수동 설치
             ```bash
             wget https://github.com/${{ github.repository }}/releases/download/v${{ needs.build.outputs.version }}/${{ needs.build.outputs.deb_name }}
             sudo apt install ./${{ needs.build.outputs.deb_name }}
             ```
-            
-            ### APT repository (GitHub Pages)
+
+            ### APT repository (GitHub Pages) / APT 저장소
             ```bash
             echo "deb [trusted=yes] https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }} stable main" | \
                 sudo tee /etc/apt/sources.list.d/vaultctl.list
             sudo apt update && sudo apt install vaultctl
             ```
-            
-            ## Post-installation
+
+            ## Post-installation / 설치 후 설정
             ```bash
             sudo vaultctl setup init
             ```

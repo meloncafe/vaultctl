@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>APT Repository - {{ domain }}</title>
+    <style>
+        :root{--bg:#fff;--fg:#0a0a0a;--muted:#f4f4f5;--muted-fg:#71717a;--border:#e4e4e7;--r:0.5rem}
+        *{box-sizing:border-box;margin:0;padding:0}
+        body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--fg);line-height:1.5}
+        .container{max-width:800px;margin:0 auto;padding:48px 24px}
+        .header{margin-bottom:32px}
+        .header h1{font-size:30px;font-weight:700;letter-spacing:-0.025em;margin-bottom:8px}
+        .header p{color:var(--muted-fg);font-size:14px}
+        .badge{display:inline-block;background:{% if enable_auth %}#f59e0b{% else %}#10b981{% endif %};color:#fff;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;margin-left:8px}
+        .card{background:var(--bg);border:1px solid var(--border);border-radius:var(--r);padding:24px;margin-bottom:24px}
+        .card-title{font-size:18px;font-weight:600;margin-bottom:16px}
+        .btn{display:inline-flex;padding:10px 16px;font-size:14px;font-weight:500;border-radius:var(--r);border:1px solid var(--border);background:var(--bg);color:var(--fg);text-decoration:none;margin-right:12px}
+        .btn:hover{background:var(--muted)}
+        .code{background:#1e1e2e;color:#cdd6f4;border-radius:var(--r);padding:16px;font-family:monospace;font-size:13px;overflow-x:auto;white-space:pre-wrap}
+        .info-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:24px}
+        .info-item{padding:16px;background:var(--muted);border-radius:var(--r)}
+        .info-item dt{font-size:12px;color:var(--muted-fg);text-transform:uppercase;margin-bottom:4px}
+        .info-item dd{font-size:14px;font-weight:500;font-family:monospace}
+        @media (max-width: 640px) {
+            .info-grid{grid-template-columns:1fr}
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>APT Repository <span class="badge">{% if enable_auth %}Private{% else %}Public{% endif %}</span></h1>
+            <p>Internal package distribution</p>
+        </div>
+        <div class="info-grid">
+            <dl class="info-item"><dt>Domain</dt><dd>{{ domain }}</dd></dl>
+            <dl class="info-item"><dt>Codename</dt><dd>{{ repo_codename }}</dd></dl>
+            <dl class="info-item"><dt>Arch</dt><dd>{{ repo_arch }}</dd></dl>
+        </div>
+        <p style="margin-bottom:24px">
+            <a href="/key.gpg" class="btn">GPG Key</a>
+            <a href="/setup-client.sh" class="btn">Setup Script</a>
+        </p>
+        <div class="card">
+            <h2 class="card-title">Quick Setup</h2>
+            <div class="code">curl -fsSL https://{{ domain }}/setup-client.sh | sudo bash{% if enable_auth %} -s -- USER PASSWORD{% endif %}</div>
+        </div>
+{% if enable_auth %}
+        <div class="card">
+            <h2 class="card-title">Manual Setup (vaultctl)</h2>
+            <div class="code">sudo vaultctl setup apt-client https://{{ domain }} -u USER -p PASSWORD</div>
+        </div>
+{% endif %}
+    </div>
+</body>
+</html>

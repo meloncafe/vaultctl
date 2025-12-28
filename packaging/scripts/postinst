@@ -1,0 +1,52 @@
+#!/bin/bash
+# ─────────────────────────────────────────────────────────────────────────────
+# vaultctl - Post-installation script (postinst)
+# vaultctl - 설치 후 스크립트 (postinst)
+#
+# This script runs after package files are unpacked.
+# 이 스크립트는 패키지 파일이 풀린 후 실행됩니다.
+#
+# Arguments / 인자:
+#   $1 = "configure" : Normal configuration / 일반 설정
+#   $1 = "abort-upgrade" : Aborting an upgrade / 업그레이드 중단
+#   $1 = "abort-remove" : Aborting removal / 제거 중단
+# ─────────────────────────────────────────────────────────────────────────────
+
+set -e
+
+# Reload systemd and reset failed states
+# systemd 리로드 및 실패 상태 초기화
+if command -v systemctl &> /dev/null; then
+    systemctl daemon-reload
+    systemctl reset-failed vaultctl-renew.service 2>/dev/null || true
+    systemctl reset-failed vaultctl-renew.timer 2>/dev/null || true
+
+    # If config file exists, enable and start timer
+    # 설정 파일이 존재하면 타이머 활성화 및 서비스 실행
+    if [[ -f /etc/vaultctl/config ]]; then
+        systemctl enable vaultctl-renew.timer 2>/dev/null || true
+        systemctl start vaultctl-renew.timer 2>/dev/null || true
+        systemctl start vaultctl-renew.service 2>/dev/null || true
+    fi
+fi
+
+# Show setup instructions on fresh install (no config file exists)
+# 초기 설치 시 설정 안내 메시지 출력 (설정 파일 없는 경우)
+if [[ ! -f /etc/vaultctl/config ]]; then
+    echo ""
+    echo "╔═══════════════════════════════════════════════════════════════╗"
+    echo "║  vaultctl installed successfully!                             ║"
+    echo "║  vaultctl 설치가 완료되었습니다!                              ║"
+    echo "╠═══════════════════════════════════════════════════════════════╣"
+    echo "║  Quick setup / 빠른 설정:                                     ║"
+    echo "║    sudo vaultctl setup init                                   ║"
+    echo "║                                                               ║"
+    echo "║  Or manual setup / 수동 설정:                                 ║"
+    echo "║    sudo cp /etc/vaultctl/config.example /etc/vaultctl/config  ║"
+    echo "║    sudo chmod 600 /etc/vaultctl/config                        ║"
+    echo "║    sudo nano /etc/vaultctl/config                             ║"
+    echo "║    sudo systemctl enable --now vaultctl-renew.timer           ║"
+    echo "╚═══════════════════════════════════════════════════════════════╝"
+fi
+
+exit 0

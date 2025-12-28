@@ -1,0 +1,31 @@
+{# Caddyfile template for APT repository #}
+{# Caddy 설정 템플릿 #}
+{{ domain }} {
+    root * {{ repo_path }}
+{% if enable_auth %}
+    
+    # Public files (GPG key, setup script)
+    # 공개 파일 (GPG 키, 설치 스크립트)
+    @public {
+        path /key.gpg /key /setup-client.sh /index.html
+    }
+    handle @public {
+        file_server
+    }
+    
+    # Protected with authentication
+    # 인증이 필요한 영역
+    handle {
+        basicauth {
+            {{ auth_user }} {{ caddy_hash }}
+        }
+        file_server
+    }
+{% else %}
+    file_server browse
+{% endif %}
+    
+    log {
+        output file /var/log/caddy/apt-access.log
+    }
+}

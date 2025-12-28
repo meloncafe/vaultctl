@@ -1,59 +1,61 @@
 # vaultctl
 
+**English** | [한국어](README.ko.md)
+
 HashiCorp Vault CLI with AppRole authentication.
 
-Proxmox LXC 컨테이너의 비밀번호/URL, Docker 환경변수를 Vault로 중앙 관리하는 CLI 도구입니다.
+A CLI tool for centrally managing Proxmox LXC container passwords/URLs and Docker environment variables with Vault.
 
-## 목차
+## Table of Contents
 
-- [특징](#특징)
-- [아키텍처](#아키텍처)
-- [설치 방법](#설치-방법)
-  - [옵션 1: 개인 APT 서버에서 설치](#옵션-1-개인-apt-서버에서-설치-권장)
-  - [옵션 2: GitHub에서 직접 설치](#옵션-2-github에서-직접-설치)
-  - [옵션 3: 소스에서 빌드](#옵션-3-소스에서-빌드)
-- [초기 설정](#초기-설정)
-- [명령어 사용법](#명령어-사용법)
-- [확장 명령어 (teller 스타일)](#확장-명령어-teller-스타일)
-  - [vaultctl run](#vaultctl-run---환경변수-주입-실행)
-  - [vaultctl sh](#vaultctl-sh---셸-통합)
-  - [vaultctl scan](#vaultctl-scan---비밀-스캔-devsecops)
-  - [vaultctl redact](#vaultctl-redact---로그-정리)
-  - [vaultctl watch](#vaultctl-watch---비밀-변경-감지)
-- [APT 서버 구축](#apt-서버-구축)
-- [패키지 빌드 및 배포](#패키지-빌드-및-배포)
-- [업데이트 플로우](#업데이트-플로우)
-- [보안 참고사항](#보안-참고사항)
-- [문제 해결](#문제-해결)
-- [teller와의 비교](#teller와의-비교)
-
----
-
-## 특징
-
-- 🔐 **AppRole 인증**: 토큰 만료 시 자동 재발급 (서버용 권장)
-- 📦 **LXC 관리**: 비밀번호, IP, 설정 정보 중앙 관리
-- 🐳 **Docker 지원**: .env 파일 자동 생성, docker-compose 연동
-- 🔄 **토큰 자동 갱신**: systemd timer로 서버에서 자동화
-- 📋 **클립보드 복사**: 비밀번호를 바로 클립보드에
-- 🎯 **단일 바이너리**: Python 의존성 없이 설치 (deb 패키지)
-- 🚀 **프로세스 실행**: 환경변수 주입하며 명령어 실행 (`vaultctl run`)
-- 🔎 **비밀 스캔**: 코드에서 하드코딩된 비밀 검색 (DevSecOps)
-- 🛡️ **로그 마스킹**: 출력/로그에서 비밀 자동 리다크션
-- 👁️ **변경 감지**: Vault 비밀 변경 시 자동 재시작 (`vaultctl watch`)
+- [Features](#features)
+- [Architecture](#architecture)
+- [Installation](#installation)
+  - [Option 1: Install from Private APT Server](#option-1-install-from-private-apt-server-recommended)
+  - [Option 2: Install from GitHub](#option-2-install-from-github)
+  - [Option 3: Build from Source](#option-3-build-from-source)
+- [Initial Setup](#initial-setup)
+- [Command Usage](#command-usage)
+- [Extended Commands (teller-style)](#extended-commands-teller-style)
+  - [vaultctl run](#vaultctl-run---run-with-injected-env-vars)
+  - [vaultctl sh](#vaultctl-sh---shell-integration)
+  - [vaultctl scan](#vaultctl-scan---secret-scanning-devsecops)
+  - [vaultctl redact](#vaultctl-redact---log-redaction)
+  - [vaultctl watch](#vaultctl-watch---secret-change-detection)
+- [APT Server Setup](#apt-server-setup)
+- [Package Build and Deployment](#package-build-and-deployment)
+- [Update Flow](#update-flow)
+- [Security Notes](#security-notes)
+- [Troubleshooting](#troubleshooting)
+- [Comparison with teller](#comparison-with-teller)
 
 ---
 
-## 아키텍처
+## Features
+
+- 🔐 **AppRole Authentication**: Automatic token reissue on expiration (recommended for servers)
+- 📦 **LXC Management**: Centralized management of passwords, IPs, and configuration
+- 🐳 **Docker Support**: Automatic .env file generation, docker-compose integration
+- 🔄 **Auto Token Renewal**: Automated via systemd timer on servers
+- 📋 **Clipboard Copy**: Copy passwords directly to clipboard
+- 🎯 **Single Binary**: Install without Python dependencies (deb package)
+- 🚀 **Process Execution**: Run commands with injected environment variables (`vaultctl run`)
+- 🔎 **Secret Scanning**: Search for hardcoded secrets in code (DevSecOps)
+- 🛡️ **Log Masking**: Automatic secret redaction in output/logs
+- 👁️ **Change Detection**: Auto-restart on Vault secret changes (`vaultctl watch`)
+
+---
+
+## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                         전체 시스템 구조                                 │
+│                         System Architecture                              │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
 │  ┌─────────────┐                                                        │
-│  │  개발 머신   │                                                        │
-│  │  (빌드용)   │                                                        │
+│  │  Dev Machine │                                                        │
+│  │   (Build)    │                                                        │
 │  │             │                                                        │
 │  │ vaultctl    │                                                        │
 │  │ build-deb   │                                                        │
@@ -62,10 +64,10 @@ Proxmox LXC 컨테이너의 비밀번호/URL, Docker 환경변수를 Vault로 �
 │         │ ./build-deb.sh                                                │
 │         ▼                                                               │
 │  ┌─────────────┐      ┌─────────────┐                                  │
-│  │ .deb 패키지  │─────▶│  APT 서버   │                                  │
-│  │             │      │  (LXC)      │                                  │
+│  │ .deb Package │─────▶│  APT Server │                                  │
+│  │             │      │   (LXC)     │                                  │
 │  └─────────────┘      │             │                                  │
-│                       │ reprepro    │◄─── GPG 서명                     │
+│                       │ reprepro    │◄─── GPG Signing                  │
 │                       │ + Nginx     │                                  │
 │                       └──────┬──────┘                                  │
 │                              │                                          │
@@ -78,8 +80,8 @@ Proxmox LXC 컨테이너의 비밀번호/URL, Docker 환경변수를 Vault로 �
 │   │ vaultctl   │      │ vaultctl   │      │ vaultctl   │              │
 │   │ (AppRole)  │      │ (AppRole)  │      │ (AppRole)  │              │
 │   │            │      │            │      │            │              │
-│   │ 토큰 만료시│      │ 토큰 만료시│      │ 토큰 만료시│              │
-│   │ 자동 재발급│      │ 자동 재발급│      │ 자동 재발급│              │
+│   │ Auto token │      │ Auto token │      │ Auto token │              │
+│   │ reissue    │      │ reissue    │      │ reissue    │              │
 │   └─────┬──────┘      └─────┬──────┘      └─────┬──────┘              │
 │         │                   │                   │                     │
 │         └───────────────────┼───────────────────┘                     │
@@ -99,87 +101,87 @@ Proxmox LXC 컨테이너의 비밀번호/URL, Docker 환경변수를 Vault로 �
 
 ---
 
-## 설치 방법
+## Installation
 
-### 옵션 1: 개인 APT 서버에서 설치 (권장)
+### Option 1: Install from Private APT Server (Recommended)
 
-개인 서버에 APT 저장소가 구축되어 있는 경우:
+If you have a private APT repository set up:
 
 ```bash
-# 1. 클라이언트 설정 (최초 1회)
-curl -fsSL https://apt.example.com/setup-client.sh | sudo bash -s -- apt "비밀번호"
+# 1. Client setup (one-time)
+curl -fsSL https://apt.example.com/setup-client.sh | sudo bash -s -- apt "password"
 
-# 2. 설치
+# 2. Install
 sudo apt update
 sudo apt install vaultctl
 
-# 3. 업데이트 (새 버전 배포 후)
+# 3. Update (after new version deployment)
 sudo apt update && sudo apt upgrade vaultctl
 ```
 
-수동 설정:
+Manual setup:
 
 ```bash
-# 1. GPG 키 추가
+# 1. Add GPG key
 curl -fsSL -u apt:PASSWORD https://apt.example.com/KEY.gpg | \
     sudo gpg --dearmor -o /usr/share/keyrings/internal-apt.gpg
 
-# 2. 인증 설정 (프라이빗 저장소인 경우)
+# 2. Authentication setup (for private repository)
 echo "machine apt.example.com login apt password PASSWORD" | \
     sudo tee /etc/apt/auth.conf.d/internal.conf
 sudo chmod 600 /etc/apt/auth.conf.d/internal.conf
 
-# 3. APT 소스 추가
+# 3. Add APT source
 echo "deb [signed-by=/usr/share/keyrings/internal-apt.gpg] https://apt.example.com stable main" | \
     sudo tee /etc/apt/sources.list.d/internal.list
 
-# 4. 설치
+# 4. Install
 sudo apt update
 sudo apt install vaultctl
 ```
 
-### 옵션 2: GitHub에서 직접 설치
+### Option 2: Install from GitHub
 
 ```bash
-# 최신 릴리스 다운로드
+# Download latest release
 wget https://github.com/YOUR_USERNAME/vaultctl/releases/latest/download/vaultctl_0.1.0_amd64.deb
 
-# 설치
+# Install
 sudo apt install ./vaultctl_0.1.0_amd64.deb
 ```
 
-### 옵션 3: 소스에서 빌드
+### Option 3: Build from Source
 
 ```bash
-# 저장소 클론
+# Clone repository
 git clone https://github.com/YOUR_USERNAME/vaultctl.git
 cd vaultctl
 
-# Poetry로 개발 환경 설정
+# Setup development environment with Poetry
 poetry install
 
-# 실행
+# Run
 poetry run vaultctl --help
 
-# 또는 deb 패키지 빌드
+# Or build deb package
 ./build-deb.sh
 sudo apt install ./dist/vaultctl_*.deb
 ```
 
 ---
 
-## 초기 설정
+## Initial Setup
 
-### 사전 준비: Vault AppRole 설정 (관리자)
+### Prerequisites: Vault AppRole Setup (Administrator)
 
-vaultctl은 **AppRole 인증**을 권장합니다. 토큰이 만료되어도 자동으로 재발급됩니다.
+vaultctl recommends **AppRole authentication**. Tokens are automatically reissued when expired.
 
-#### 1. Vault Policy 생성
+#### 1. Create Vault Policy
 
 ```bash
-# Vault 서버에서 실행
+# Run on Vault server
 cat > vaultctl-policy.hcl << 'EOF'
-# KV v2 시크릿 엔진 읽기/쓰기
+# KV v2 secret engine read/write
 path "proxmox/data/*" {
   capabilities = ["create", "read", "update", "delete", "list"]
 }
@@ -188,7 +190,7 @@ path "proxmox/metadata/*" {
   capabilities = ["list", "read", "delete"]
 }
 
-# 토큰 자체 정보 조회 및 갱신
+# Token self-lookup and renewal
 path "auth/token/lookup-self" {
   capabilities = ["read"]
 }
@@ -201,15 +203,15 @@ EOF
 vault policy write vaultctl vaultctl-policy.hcl
 ```
 
-> **참고**: `proxmox`는 KV 엔진 마운트 경로입니다. 환경에 맞게 변경하세요.
+> **Note**: `proxmox` is the KV engine mount path. Adjust according to your environment.
 
-#### 2. AppRole 활성화 및 Role 생성
+#### 2. Enable AppRole and Create Role
 
 ```bash
-# AppRole 인증 활성화 (최초 1회)
+# Enable AppRole authentication (one-time)
 vault auth enable approle
 
-# vaultctl용 Role 생성
+# Create role for vaultctl
 vault write auth/approle/role/vaultctl \
   token_policies="vaultctl" \
   token_ttl=1h \
@@ -218,175 +220,175 @@ vault write auth/approle/role/vaultctl \
   secret_id_num_uses=0
 ```
 
-| 설정 | 값 | 설명 |
-|------|-----|------|
-| `token_ttl` | 1h | 발급된 토큰의 기본 TTL |
-| `token_max_ttl` | 4h | 토큰 최대 TTL |
-| `secret_id_ttl` | 0 | Secret ID 만료 없음 |
-| `secret_id_num_uses` | 0 | Secret ID 사용 횟수 제한 없음 |
+| Setting | Value | Description |
+|---------|-------|-------------|
+| `token_ttl` | 1h | Default TTL for issued tokens |
+| `token_max_ttl` | 4h | Maximum token TTL |
+| `secret_id_ttl` | 0 | No Secret ID expiration |
+| `secret_id_num_uses` | 0 | Unlimited Secret ID usage |
 
-#### 3. Role ID와 Secret ID 발급
+#### 3. Issue Role ID and Secret ID
 
 ```bash
-# Role ID 조회 (서버별로 동일하게 사용 가능)
+# Get Role ID (can be shared across servers)
 vault read auth/approle/role/vaultctl/role-id
-# 예: role_id = "xxxx-xxxx-xxxx"
+# e.g., role_id = "xxxx-xxxx-xxxx"
 
-# Secret ID 생성 (서버별로 다르게 발급 권장)
+# Generate Secret ID (recommended: different per server)
 vault write -f auth/approle/role/vaultctl/secret-id
-# 예: secret_id = "yyyy-yyyy-yyyy"
+# e.g., secret_id = "yyyy-yyyy-yyyy"
 ```
 
-> **보안 팁**: Secret ID는 서버별로 다르게 발급하면, 특정 서버의 인증만 취소할 수 있습니다.
+> **Security Tip**: Issue different Secret IDs per server to revoke access for specific servers only.
 
 ---
 
-### 방법 1: 설정 마법사 (권장)
+### Method 1: Setup Wizard (Recommended)
 
 ```bash
 sudo vaultctl setup init
 ```
 
-대화형으로 다음을 설정합니다:
-- Vault 서버 주소
-- 인증 방법 선택 (AppRole 권장)
-- Role ID / Secret ID 입력
-- systemd 자동 갱신 타이머
+Interactive setup for:
+- Vault server address
+- Authentication method selection (AppRole recommended)
+- Role ID / Secret ID input
+- systemd auto-renewal timer
 
-### 방법 2: 수동 설정
+### Method 2: Manual Setup
 
 ```bash
-# 1. 환경 파일 생성
-sudo cp /etc/vaultctl/env.example /etc/vaultctl/env
-sudo chmod 600 /etc/vaultctl/env
+# 1. Create config file
+sudo cp /etc/vaultctl/config.example /etc/vaultctl/config
+sudo chmod 600 /etc/vaultctl/config
 
-# 2. 설정 편집
-sudo nano /etc/vaultctl/env
+# 2. Edit configuration
+sudo nano /etc/vaultctl/config
 ```
 
-**AppRole 인증** (`/etc/vaultctl/env`):
+**AppRole Authentication** (`/etc/vaultctl/config`):
 
 ```bash
-# Vault 서버 주소
+# Vault server address
 VAULT_ADDR=https://vault.example.com
 VAULTCTL_VAULT_ADDR=https://vault.example.com
 
-# AppRole 인증 (토큰 만료 시 자동 재발급)
+# AppRole authentication (auto-reissue on expiration)
 VAULTCTL_APPROLE_ROLE_ID=xxxx-xxxx-xxxx
 VAULTCTL_APPROLE_SECRET_ID=yyyy-yyyy-yyyy
 
-# 토큰 갱신 설정 (선택)
-VAULTCTL_TOKEN_RENEW_THRESHOLD=3600    # TTL이 1시간 미만이면 갱신
-VAULTCTL_TOKEN_RENEW_INCREMENT=86400   # 24시간 연장
+# Token renewal settings (optional)
+VAULTCTL_TOKEN_RENEW_THRESHOLD=3600    # Renew when TTL < 1 hour
+VAULTCTL_TOKEN_RENEW_INCREMENT=86400   # Extend by 24 hours
 ```
 
-**토큰 직접 입력** (비권장, 토큰 만료 시 수동 갱신 필요):
+**Direct Token Input** (not recommended, requires manual renewal):
 
 ```bash
-# Vault 서버 주소
+# Vault server address
 VAULT_ADDR=https://vault.example.com
 VAULTCTL_VAULT_ADDR=https://vault.example.com
 
-# Vault 토큰
+# Vault token
 VAULT_TOKEN=hvs.xxxxxxxxxxxxxxxx
 
-# 토큰 갱신 설정 (선택)
-VAULTCTL_TOKEN_RENEW_THRESHOLD=3600    # TTL이 1시간 미만이면 갱신
-VAULTCTL_TOKEN_RENEW_INCREMENT=86400   # 24시간 연장
+# Token renewal settings (optional)
+VAULTCTL_TOKEN_RENEW_THRESHOLD=3600    # Renew when TTL < 1 hour
+VAULTCTL_TOKEN_RENEW_INCREMENT=86400   # Extend by 24 hours
 ```
 
 ```bash
-# 3. 토큰 자동 갱신 활성화 (선택)
+# 3. Enable auto token renewal (optional)
 sudo systemctl enable --now vaultctl-renew.timer
 
-# 4. 설정 테스트
+# 4. Test configuration
 vaultctl setup test
 ```
 
-### 인증 방법 비교
+### Authentication Method Comparison
 
-| 방법 | 토큰 만료 시 | 서버 재시작 후 | 권장 환경 |
-|------|-------------|---------------|----------|
-| **AppRole** (권장) | 자동 재발급 | 정상 작동 | 서버, LXC, CI/CD |
-| Token 직접 입력 | 수동 갱신 필요 | TTL 내 정상 | 데스크탑, 테스트 |
+| Method | On Token Expiration | After Server Restart | Recommended For |
+|--------|---------------------|---------------------|-----------------|
+| **AppRole** (recommended) | Auto-reissue | Works normally | Servers, LXC, CI/CD |
+| Direct Token | Manual renewal needed | Works within TTL | Desktop, Testing |
 
-### 환경 변수 전체 목록
+### Environment Variables Reference
 
-| 변수 | 기본값 | 설명 |
-|------|--------|------|
-| `VAULTCTL_VAULT_ADDR` | `https://vault.example.com` | Vault 서버 주소 |
-| `VAULTCTL_VAULT_TOKEN` | - | Vault 토큰 (또는 `VAULT_TOKEN`) |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VAULTCTL_VAULT_ADDR` | `https://vault.example.com` | Vault server address |
+| `VAULTCTL_VAULT_TOKEN` | - | Vault token (or `VAULT_TOKEN`) |
 | `VAULTCTL_APPROLE_ROLE_ID` | - | AppRole Role ID |
 | `VAULTCTL_APPROLE_SECRET_ID` | - | AppRole Secret ID |
-| `VAULTCTL_APPROLE_MOUNT` | `approle` | AppRole 인증 마운트 경로 |
-| `VAULTCTL_KV_MOUNT` | `proxmox` | KV 시크릿 엔진 마운트 경로 |
-| `VAULTCTL_KV_LXC_PATH` | `lxc` | LXC 시크릿 경로 |
-| `VAULTCTL_KV_DOCKER_PATH` | `docker` | Docker 시크릿 경로 |
-| `VAULTCTL_TOKEN_RENEW_THRESHOLD` | `3600` | 갱신 임계값 (초) |
-| `VAULTCTL_TOKEN_RENEW_INCREMENT` | `86400` | 갱신 시 연장 시간 (초) |
+| `VAULTCTL_APPROLE_MOUNT` | `approle` | AppRole auth mount path |
+| `VAULTCTL_KV_MOUNT` | `proxmox` | KV secret engine mount path |
+| `VAULTCTL_KV_LXC_PATH` | `lxc` | LXC secrets path |
+| `VAULTCTL_KV_DOCKER_PATH` | `docker` | Docker secrets path |
+| `VAULTCTL_TOKEN_RENEW_THRESHOLD` | `3600` | Renewal threshold (seconds) |
+| `VAULTCTL_TOKEN_RENEW_INCREMENT` | `86400` | Renewal increment (seconds) |
 
 ---
 
-## 명령어 사용법
+## Command Usage
 
-### 인증 (auth)
+### Authentication (auth)
 
 ```bash
-# AppRole 인증 (서버용 권장)
+# AppRole authentication (recommended for servers)
 vaultctl auth login --approle
 
-# 토큰 직접 입력
+# Direct token input
 vaultctl auth login --token hvs.xxx
 
-# 인증 상태 및 서버 상태 확인
+# Check auth and server status
 vaultctl auth status
 
-# 토큰 정보 확인
+# Check token info
 vaultctl auth whoami
 
-# 로그아웃 (캐시된 토큰 삭제)
+# Logout (delete cached token)
 vaultctl auth logout
 ```
 
-### LXC 관리 (lxc)
+### LXC Management (lxc)
 
 ```bash
-# 모든 LXC 목록
+# List all LXC
 vaultctl lxc list
-vaultctl lxc list --verbose  # 상세 정보 포함
+vaultctl lxc list --verbose  # Include detailed info
 
-# 특정 LXC 정보 조회
+# Get specific LXC info
 vaultctl lxc get 130-n8n
 
-# 특정 필드만 조회
+# Get specific field only
 vaultctl lxc get 130-n8n --field ip
 vaultctl lxc get 130-n8n -f root_password
 
-# 필드 값을 클립보드에 복사
+# Copy field value to clipboard
 vaultctl lxc get 130-n8n -f root_password --copy
 
-# 비밀번호 클립보드 복사 (단축)
+# Copy password to clipboard (shortcut)
 vaultctl lxc pass 130-n8n
-# 또는
+# or
 vaultctl pass 130-n8n
 
-# LXC 정보 저장/업데이트
+# Save/update LXC info
 vaultctl lxc put 130-n8n root_password=newpass123 ip=10.10.10.130
-vaultctl lxc put 130-n8n url=https://n8n.example.com notes="N8N 자동화"
+vaultctl lxc put 130-n8n url=https://n8n.example.com notes="N8N automation"
 
-# LXC 삭제
+# Delete LXC
 vaultctl lxc delete 130-n8n
 
-# JSON 파일에서 일괄 가져오기
+# Bulk import from JSON file
 vaultctl lxc import lxc-secrets.json
-vaultctl lxc import lxc-secrets.json --merge  # 기존 데이터와 병합
+vaultctl lxc import lxc-secrets.json --merge  # Merge with existing data
 
-# JSON 파일로 내보내기
+# Export to JSON file
 vaultctl lxc export
 vaultctl lxc export --output backup.json
 ```
 
-`lxc-secrets.json` 형식:
+`lxc-secrets.json` format:
 
 ```json
 {
@@ -394,7 +396,7 @@ vaultctl lxc export --output backup.json
     "root_password": "password123",
     "ip": "10.10.10.130",
     "url": "https://n8n.example.com",
-    "notes": "N8N 자동화 서버"
+    "notes": "N8N automation server"
   },
   "180-database": {
     "root_password": "dbpass456",
@@ -404,81 +406,78 @@ vaultctl lxc export --output backup.json
 }
 ```
 
-### Docker 환경변수 관리 (docker)
+### Docker Environment Variables (docker)
 
 ```bash
-# Docker 서비스 목록
+# List Docker services
 vaultctl docker list
 
-# 서비스의 환경변수 조회
+# Get service environment variables
 vaultctl docker get n8n
 
-# 환경변수 저장
+# Save environment variables
 vaultctl docker put n8n DB_HOST=10.10.10.180 DB_PASSWORD=secret123
 
-# .env 파일 생성
-vaultctl docker env n8n                    # 현재 디렉토리에 .env 생성
-vaultctl docker env n8n --output /opt/n8n  # 지정 경로에 생성
-vaultctl docker env n8n --stdout           # 표준 출력으로
+# Generate .env file
+vaultctl docker env n8n                    # Create .env in current directory
+vaultctl docker env n8n --output /opt/n8n  # Create in specified path
+vaultctl docker env n8n --stdout           # Output to stdout
 
-# 기존 .env 파일을 Vault로 가져오기
+# Import existing .env file to Vault
 vaultctl docker import-env n8n --file .env
-vaultctl docker import-env n8n -f .env --merge  # 기존 값과 병합
+vaultctl docker import-env n8n -f .env --merge  # Merge with existing values
 
-# docker-compose 실행 (환경변수 자동 로드)
+# Run docker-compose (auto-load env vars)
 vaultctl docker compose n8n up -d
 vaultctl docker compose n8n logs -f
 vaultctl docker compose n8n down
 
-# 서비스 삭제
+# Delete service
 vaultctl docker delete n8n
 ```
 
-### 토큰 관리 (token)
+### Token Management (token)
 
 ```bash
-# 토큰 상세 정보
+# Token detailed info
 vaultctl token info
 
-# 토큰 갱신 필요 여부 확인 (스크립트용)
+# Check if renewal needed (for scripts)
 vaultctl token check
-# 종료 코드: 0=갱신 필요, 1=갱신 불필요, 2=에러
+# Exit codes: 0=renewal needed, 1=no renewal needed, 2=error
 
-# 수동 갱신
+# Manual renewal
 vaultctl token renew
-vaultctl token renew --increment 172800  # 48시간 연장
+vaultctl token renew --increment 172800  # Extend by 48 hours
 
-# 자동 갱신 (systemd timer용)
+# Auto renewal (for systemd timer)
 vaultctl token auto-renew
-vaultctl token auto-renew --quiet  # 로그 최소화
+vaultctl token auto-renew --quiet  # Minimize logging
 
-# 새 토큰 생성 (관리자용)
+# Create new token (admin)
 vaultctl token create --policies admin --ttl 720h
-vaultctl token create -p readonly -p lxc-read --ttl 0  # 무기한
-
-# 1Password에 토큰 저장
-vaultctl token create -p admin --ttl 0 --save-to-1password
+vaultctl token create -p readonly -p lxc-read --ttl 0  # No expiration
 ```
 
-### 설정 관리 (setup)
+### Setup Management (setup)
 
 ```bash
-# 초기 설정 마법사
+# Initial setup wizard
 sudo vaultctl setup init
 
-# systemd 타이머 관리
-vaultctl setup systemd --status   # 상태 확인
-sudo vaultctl setup systemd --enable   # 활성화
-sudo vaultctl setup systemd --disable  # 비활성화
+# systemd timer management
+vaultctl setup systemd --status   # Check status
+sudo vaultctl setup systemd --enable   # Enable
+sudo vaultctl setup systemd --disable  # Disable
 
-# 환경 파일 편집
-sudo vaultctl setup env --edit
+# Edit config file
+sudo vaultctl setup config --edit
 
-# 연결 테스트
+# Test connection
 vaultctl setup test
 ```
 
-### 단축 명령어
+### Shortcut Commands
 
 ```bash
 vaultctl login          # = auth login
@@ -488,74 +487,74 @@ vaultctl ls docker      # = docker list
 vaultctl get 130-n8n    # = lxc get 130-n8n
 vaultctl pass 130-n8n   # = lxc pass 130-n8n
 vaultctl env n8n        # = docker env n8n
-vaultctl config         # 현재 설정 출력
+vaultctl config         # Print current config
 ```
 
 ---
 
-## 확장 명령어 (teller 스타일)
+## Extended Commands (teller-style)
 
-[teller](https://github.com/tellerops/teller)에서 영감을 받은 고급 기능들입니다.
+Advanced features inspired by [teller](https://github.com/tellerops/teller).
 
-### vaultctl run - 환경변수 주입 실행
+### vaultctl run - Run with Injected Env Vars
 
-Vault의 환경변수를 주입하면서 프로세스를 실행합니다.
+Run processes with Vault environment variables injected.
 
 ```bash
-# Docker 서비스의 환경변수로 프로세스 실행
+# Run process with Docker service env vars
 vaultctl run n8n -- node index.js
 vaultctl run n8n -- docker-compose up -d
 
-# 셸 명령어 실행
+# Run shell command
 vaultctl run n8n --shell -- 'echo $DB_PASSWORD | base64'
 
-# LXC 시크릿 사용
+# Use LXC secrets
 vaultctl run 130-n8n --source lxc -- ./deploy.sh
 
-# 기존 환경변수 초기화 (격리 실행)
+# Reset existing env vars (isolated execution)
 vaultctl run n8n --reset -- python app.py
 ```
 
-### vaultctl sh - 셸 통합
+### vaultctl sh - Shell Integration
 
-셸에서 직접 환경변수를 로드합니다.
+Load environment variables directly in shell.
 
 ```bash
-# 현재 셸에 환경변수 로드
+# Load env vars in current shell
 eval "$(vaultctl sh n8n)"
 
-# .zshrc 또는 .bashrc에 추가하여 자동 로드
+# Add to .zshrc or .bashrc for auto-load
 eval "$(vaultctl sh n8n)"
 
-# Fish 셸용
+# For Fish shell
 vaultctl sh n8n --format fish | source
 ```
 
-### vaultctl scan - 비밀 스캔 (DevSecOps)
+### vaultctl scan - Secret Scanning (DevSecOps)
 
-코드에서 Vault에 저장된 비밀이 하드코딩되어 있는지 검색합니다.
+Search for hardcoded Vault secrets in code.
 
 ```bash
-# 현재 디렉토리 스캔
+# Scan current directory
 vaultctl scan
 
-# 특정 경로 스캔
+# Scan specific path
 vaultctl scan ./src
 
-# 특정 서비스의 비밀만 검색
+# Search for specific service secrets only
 vaultctl scan --service n8n
 
-# CI/CD 파이프라인용 (발견 시 종료 코드 1)
+# For CI/CD pipelines (exit code 1 if found)
 vaultctl scan --error-if-found
 
-# JSON 출력
+# JSON output
 vaultctl scan --json
 
-# 특정 디렉토리 제외
+# Exclude specific directories
 vaultctl scan --exclude node_modules --exclude .git
 ```
 
-CI/CD 파이프라인 예시:
+CI/CD pipeline example:
 
 ```yaml
 # .github/workflows/security.yml
@@ -568,46 +567,46 @@ jobs:
         run: vaultctl scan --error-if-found
 ```
 
-### vaultctl redact - 로그 정리
+### vaultctl redact - Log Redaction
 
-출력이나 로그에서 비밀을 마스킹합니다.
+Mask secrets in output or logs.
 
 ```bash
-# stdin에서 비밀 마스킹
+# Mask secrets from stdin
 cat app.log | vaultctl redact
 
-# 실시간 로그 정리
+# Real-time log redaction
 tail -f /var/log/app.log | vaultctl redact
 
-# 파일 처리
+# Process file
 vaultctl redact --in dirty.log --out clean.log
 
-# 특정 서비스의 비밀만 마스킹
+# Mask only specific service secrets
 cat log.txt | vaultctl redact --service n8n
 
-# 커스텀 마스크 문자열
+# Custom mask string
 vaultctl redact --mask "[HIDDEN]" < input.log
 ```
 
-### vaultctl watch - 비밀 변경 감지
+### vaultctl watch - Secret Change Detection
 
-Vault에서 비밀이 변경되면 자동으로 프로세스를 재시작합니다.
+Automatically restart processes when Vault secrets change.
 
 ```bash
-# 비밀 변경 시 자동 재시작
+# Auto-restart on secret change
 vaultctl watch n8n -- docker-compose up -d
 
-# 체크 간격 설정 (기본 60초)
+# Set check interval (default 60 seconds)
 vaultctl watch n8n --interval 300 -- docker-compose restart
 
-# SIGHUP 전송 (설정 리로드)
+# Send SIGHUP (config reload)
 vaultctl watch n8n --on-change reload -- ./app
 
-# 명령어만 실행 (프로세스 관리 없이)
+# Execute command only (no process management)
 vaultctl watch n8n --on-change exec -- ./notify-slack.sh
 ```
 
-systemd 서비스로 등록:
+Register as systemd service:
 
 ```bash
 cat > /etc/systemd/system/n8n-watcher.service << EOF
@@ -619,7 +618,7 @@ After=network.target
 Type=simple
 ExecStart=/usr/bin/vaultctl watch n8n -- docker-compose -f /opt/n8n/docker-compose.yml up -d
 Restart=always
-EnvironmentFile=/etc/vaultctl/env
+EnvironmentFile=/etc/vaultctl/config
 WorkingDirectory=/opt/n8n
 
 [Install]
@@ -630,50 +629,113 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now n8n-watcher
 ```
 
-**사용 시나리오:**
-- DB 비밀번호 변경 시 자동 재시작
-- API 키 로테이션 후 서비스 리로드
-- 설정 변경 감지하여 무중단 배포
+**Use Cases:**
+- Auto-restart on DB password change
+- Service reload after API key rotation
+- Zero-downtime deployment on config change
 
 ---
 
-## APT 서버 구축
+## APT Server Setup
 
-### 사전 요구사항
+### Prerequisites
 
 - Ubuntu 22.04+ LXC
-- 도메인 (예: `apt.internal.example.com`)
-- Traefik 또는 리버스 프록시 (HTTPS용)
+- Domain (e.g., `apt.internal.example.com`)
+- Traefik or reverse proxy (for HTTPS, Traefik mode)
 
-### Traefik 환경 (권장)
+### Interactive Installation (Recommended)
 
-Traefik이 앞단에서 Let's Encrypt 인증서를 관리하는 경우:
+Build APT server interactively on an LXC with vaultctl installed:
 
 ```bash
-# 1. APT 서버용 LXC 생성 (Proxmox)
-pct create 122 local:vztmpl/ubuntu-22.04-standard_*.tar.zst \
-    --hostname apt-repo \
-    --memory 512 \
-    --cores 1 \
-    --rootfs local-lvm:8 \
-    --net0 name=eth0,bridge=vmbr0,ip=dhcp
-
-pct start 122
-
-# 2. 스크립트 복사 및 실행
-pct push 122 scripts/setup-apt-server-traefik.sh /root/
-pct enter 122
-
-export DOMAIN="apt.internal.example.com"
-export GPG_EMAIL="apt@example.com"
-export AUTH_USER="apt"
-# AUTH_PASS는 자동 생성됨
-
-chmod +x /root/setup-apt-server-traefik.sh
-/root/setup-apt-server-traefik.sh
+# APT server installation (interactive wizard)
+sudo vaultctl setup apt-server
 ```
 
-스크립트 완료 후 출력되는 Traefik 설정을 추가:
+Interactive configuration for:
+- **Web server mode**: Caddy (standalone) or Traefik (backend)
+- **Domain**: apt.example.com
+- **GPG signing info**: Email, key name
+- **Repository settings**: Name, codename, architecture
+- **Authentication**: Username/password (optional)
+
+```
+$ sudo vaultctl setup apt-server
+
+Select web server mode
+  1. Caddy - Standalone with automatic HTTPS (Let's Encrypt)
+  2. Traefik - Backend for existing Traefik reverse proxy
+
+Choice [1]: 2
+
+╭── 📦 APT Server ─────────────────────╮
+│ APT Repository Server Setup                    │
+│                                                 │
+│ Web server: TRAEFIK                             │
+│ Full installation                               │
+╰─────────────────────────────────────────────────╯
+
+Domain (e.g., apt.example.com): apt.internal.example.com
+GPG signing email: apt@example.com
+GPG key name [APT Repository Signing Key]: 
+Repository name [internal]: 
+Distribution codename [stable]: 
+Architecture [amd64]: 
+Enable authentication? [Y/n]: y
+Auth username [apt]: 
+Password: 
+
+Configuration Summary
+  Domain        apt.internal.example.com
+  GPG Email     apt@example.com
+  Repository    internal
+  Codename      stable
+  Web Server    TRAEFIK
+  Auth          Enabled
+  Username      apt
+  Password      ********
+  Listen Port   8080
+
+Proceed with this configuration? [Y/n]: 
+```
+
+### Reconfiguration Mode
+
+To modify existing settings:
+
+```bash
+sudo vaultctl setup apt-server --reconfigure
+```
+
+### Client Setup
+
+Configure client LXC to use the APT repository:
+
+```bash
+# Interactive installation
+sudo vaultctl setup apt-client https://apt.example.com
+
+# With authentication
+sudo vaultctl setup apt-client https://apt.example.com -u apt -p "password"
+
+# Remove
+sudo vaultctl setup apt-client https://apt.example.com --remove
+```
+
+Or one-liner script:
+
+```bash
+# Authenticated repository
+curl -fsSL https://apt.example.com/setup-client.sh | sudo bash -s -- apt "password"
+
+# Public repository
+curl -fsSL https://apt.example.com/setup-client.sh | sudo bash
+```
+
+### Traefik Configuration Example
+
+If installed in Traefik mode, add this Traefik configuration:
 
 ```yaml
 # /etc/traefik/dynamic/apt-repo.yml
@@ -691,219 +753,230 @@ http:
     apt-repo:
       loadBalancer:
         servers:
-          - url: "http://10.10.10.122:80"  # APT LXC IP
+          - url: "http://10.10.10.122:8080"  # APT LXC IP:Port
 ```
 
-### 독립 실행 (Caddy)
+### APT Repository Management (repo)
 
-Traefik 없이 독립적으로 운영하는 경우:
+Package add/remove commands:
 
 ```bash
-export DOMAIN="apt.example.com"
-./scripts/setup-apt-server.sh
+# Add package
+vaultctl repo add vaultctl_0.1.0_amd64.deb
+
+# List packages
+vaultctl repo list
+
+# Remove package
+vaultctl repo remove vaultctl
+
+# Repository info
+vaultctl repo info
+
+# Output client installation commands
+vaultctl repo export
+
+# Verify repository integrity
+vaultctl repo check
+
+# Clean old files
+vaultctl repo clean
 ```
 
-Caddy가 Let's Encrypt 인증서를 자동 발급합니다.
+### Legacy Commands (Compatibility)
 
-### APT 서버 관리 명령어
+Previous script-style commands still work:
 
 ```bash
-# 패키지 추가
-apt-repo-add vaultctl_0.1.0_amd64.deb
-
-# 패키지 목록
-apt-repo-list
-
-# 패키지 제거
-apt-repo-remove vaultctl
-
-# 저장소 정보
-apt-repo-info
+apt-repo-add     # -> vaultctl repo add
+apt-repo-list    # -> vaultctl repo list
+apt-repo-remove  # -> vaultctl repo remove
+apt-repo-info    # -> vaultctl repo info
 ```
 
-### HTTPS 인증서 vs GPG 서명 키
+### HTTPS Certificate vs GPG Signing Key
 
-**이 둘은 완전히 다른 목적입니다:**
+**These serve completely different purposes:**
 
-| 항목 | HTTPS 인증서 | GPG 서명 키 |
-|------|-------------|------------|
-| **목적** | 통신 암호화 | 패키지 무결성 검증 |
-| **발급** | Let's Encrypt (CA) | 자체 생성 |
-| **관리** | Traefik/Caddy | reprepro |
-| **갱신** | 자동 (90일) | 불필요 (무기한 가능) |
+| Item | HTTPS Certificate | GPG Signing Key |
+|------|-------------------|-----------------|
+| **Purpose** | Encrypt communication | Verify package integrity |
+| **Issued by** | Let's Encrypt (CA) | Self-generated |
+| **Managed by** | Traefik/Caddy | reprepro |
+| **Renewal** | Automatic (90 days) | Not required (can be permanent) |
 
 ```
-[클라이언트] ──HTTPS(Let's Encrypt)──▶ [APT 서버]
-                                           │
-                                    .deb 다운로드
-                                           │
-                                           ▼
-                                    GPG 서명 검증
-                                    (자체 생성 키)
+[Client] ──HTTPS(Let's Encrypt)──▶ [APT Server]
+                                        │
+                                  .deb download
+                                        │
+                                        ▼
+                                  GPG signature verification
+                                  (Self-generated key)
 ```
 
 ---
 
-## 패키지 빌드 및 배포
+## Package Build and Deployment
 
-### 빌드 환경 요구사항
+### Build Requirements
 
 - Python 3.10+
 - Poetry
 - Ruby + fpm (`gem install fpm`)
 - PyInstaller
 
-### 빌드 단계
+### Build Steps
 
 ```bash
-# 1. 저장소 클론
+# 1. Clone repository
 git clone https://github.com/YOUR_USERNAME/vaultctl.git
 cd vaultctl
 
-# 2. 버전 업데이트 (필요시)
-# pyproject.toml과 src/vaultctl/__init__.py의 version 수정
+# 2. Update version (if needed)
+# Edit version in pyproject.toml and src/vaultctl/__init__.py
 
-# 3. deb 패키지 빌드
+# 3. Build deb package
 ./build-deb.sh
 
-# 결과: dist/vaultctl_0.1.0_amd64.deb
+# Result: dist/vaultctl_0.1.0_amd64.deb
 ```
 
-### APT 서버에 배포
+### Deploy to APT Server
 
 ```bash
-# 1. deb 파일을 APT 서버로 복사
+# 1. Copy deb file to APT server
 scp dist/vaultctl_0.1.0_amd64.deb root@apt-server:/tmp/
 
-# 2. APT 서버에서 패키지 추가
+# 2. Add package on APT server
 ssh root@apt-server
 apt-repo-add /tmp/vaultctl_0.1.0_amd64.deb
 
-# 3. 확인
+# 3. Verify
 apt-repo-list
 ```
 
-### GitHub Releases 배포 (자동)
+### GitHub Releases Deployment (Automated)
 
 ```bash
-# 1. 버전 태그 생성
+# 1. Create version tag
 git tag v0.1.0
 git push origin v0.1.0
 
-# 2. GitHub Actions가 자동으로:
-#    - deb 패키지 빌드
-#    - GitHub Releases에 업로드
-#    - GitHub Pages APT 저장소 업데이트 (선택)
+# 2. GitHub Actions automatically:
+#    - Builds deb package
+#    - Uploads to GitHub Releases
+#    - Updates GitHub Pages APT repository (optional)
 ```
 
 ---
 
-## 업데이트 플로우
+## Update Flow
 
-### 시나리오 1: 코드 수정 후 전체 배포
+### Scenario 1: Code Change with Full Deployment
 
 ```bash
-# 개발 머신에서
+# On dev machine
 cd vaultctl
 
-# 1. 코드 수정
+# 1. Modify code
 vim src/vaultctl/commands/lxc.py
 
-# 2. 버전 업데이트
+# 2. Update version
 # pyproject.toml: version = "0.2.0"
 # src/vaultctl/__init__.py: __version__ = "0.2.0"
 
-# 3. 빌드
+# 3. Build
 ./build-deb.sh
 
-# 4. APT 서버에 배포
+# 4. Deploy to APT server
 scp dist/vaultctl_0.2.0_amd64.deb root@apt-server:/tmp/
 ssh root@apt-server "apt-repo-add /tmp/vaultctl_0.2.0_amd64.deb"
 
-# 각 LXC에서
+# On each LXC
 sudo apt update
 sudo apt upgrade vaultctl
 ```
 
-### 시나리오 2: GitHub 릴리스 (자동화)
+### Scenario 2: GitHub Release (Automated)
 
 ```bash
-# 개발 머신에서
+# On dev machine
 cd vaultctl
 
-# 1. 코드 수정 및 커밋
+# 1. Modify and commit code
 git add .
-git commit -m "feat: 새로운 기능 추가"
+git commit -m "feat: add new feature"
 
-# 2. 버전 태그
+# 2. Tag version
 git tag v0.2.0
 git push origin main --tags
 
-# 3. GitHub Actions가 자동으로 빌드 및 배포
+# 3. GitHub Actions automatically builds and deploys
 
-# 각 LXC에서 (GitHub Pages APT 사용시)
+# On each LXC (if using GitHub Pages APT)
 sudo apt update
 sudo apt upgrade vaultctl
 ```
 
-### 시나리오 3: 긴급 패치
+### Scenario 3: Emergency Patch
 
 ```bash
-# APT 서버에서 직접 이전 버전으로 롤백
+# Rollback to previous version on APT server
 apt-repo-remove vaultctl
 apt-repo-add /backup/vaultctl_0.1.0_amd64.deb
 
-# 각 LXC에서
+# On each LXC
 sudo apt update
 sudo apt install --reinstall vaultctl
 ```
 
 ---
 
-## 각 LXC에서 해야 하는 작업
+## Per-LXC Setup Tasks
 
-### 최초 설정 (1회)
+### Initial Setup (One-time)
 
 ```bash
-# 1. APT 클라이언트 설정
-curl -fsSL https://apt.example.com/setup-client.sh | sudo bash -s -- apt "비밀번호"
+# 1. APT client setup
+curl -fsSL https://apt.example.com/setup-client.sh | sudo bash -s -- apt "password"
 
-# 2. vaultctl 설치
+# 2. Install vaultctl
 sudo apt update
 sudo apt install vaultctl
 
-# 3. 초기 설정
+# 3. Initial configuration
 sudo vaultctl setup init
 
-# 또는 수동 설정
-sudo cp /etc/vaultctl/env.example /etc/vaultctl/env
-sudo nano /etc/vaultctl/env  # VAULT_ADDR, VAULT_TOKEN 설정
-sudo chmod 600 /etc/vaultctl/env
+# Or manual setup
+sudo cp /etc/vaultctl/config.example /etc/vaultctl/config
+sudo nano /etc/vaultctl/config  # Configure VAULT_ADDR, authentication
+sudo chmod 600 /etc/vaultctl/config
 
-# 4. 토큰 자동 갱신 활성화
+# 4. Enable auto token renewal
 sudo systemctl enable --now vaultctl-renew.timer
 
-# 5. 테스트
+# 5. Test
 vaultctl status
 vaultctl lxc list
 ```
 
-### 일상적인 사용
+### Daily Usage
 
 ```bash
-# 비밀번호 조회
+# Get password
 vaultctl pass 130-n8n
 
-# Docker 환경변수로 서비스 실행
+# Run service with Docker env vars
 cd /opt/n8n
 vaultctl docker env n8n
 docker-compose up -d
 
-# 또는 한 번에
+# Or all at once
 vaultctl docker compose n8n up -d
 ```
 
-### 업데이트
+### Updates
 
 ```bash
 sudo apt update
@@ -912,172 +985,185 @@ sudo apt upgrade vaultctl
 
 ---
 
-## 보안 참고사항
+## Security Notes
 
-### 토큰 관리
+### Token Management
 
-| 환경 | 권장 방식 |
-|------|----------|
-| 데스크탑 (macOS) | 1Password + Touch ID, TTL=0 토큰 |
-| 서버 (LXC) | `/etc/vaultctl/env`에 토큰, systemd timer로 자동 갱신 |
+| Environment | Recommended Method |
+|-------------|-------------------|
+| Desktop | Direct token input, TTL=0 token |
+| Server (LXC) | AppRole in `/etc/vaultctl/config`, systemd timer for auto-renewal |
 
 ```bash
-# 서버용 토큰 생성 (관리자)
+# Create server token (admin)
 vault token create -policy=lxc-read -policy=docker-read -ttl=720h
 
-# 또는 vaultctl로
+# Or with vaultctl
 vaultctl token create -p lxc-read -p docker-read --ttl 720h
 ```
 
-### 파일 권한
+### File Permissions
 
 ```bash
-# 환경 파일
-sudo chmod 600 /etc/vaultctl/env
+# Config file
+sudo chmod 600 /etc/vaultctl/config
 
-# APT 인증 파일
+# APT auth file
 sudo chmod 600 /etc/apt/auth.conf.d/internal.conf
 ```
 
-### IP 제한 (추가 보안)
+### IP Restrictions (Additional Security)
 
-Tailscale/WireGuard 네트워크에서만 접근 허용:
+Allow access only from Tailscale/WireGuard networks:
 
 ```nginx
-# APT 서버 Nginx 설정
+# APT server Nginx config
 location / {
     allow 100.64.0.0/10;  # Tailscale
-    allow 10.10.10.0/24;  # 내부 네트워크
+    allow 10.10.10.0/24;  # Internal network
     deny all;
     
-    # ... 기존 설정
+    # ... existing config
 }
 ```
 
 ---
 
-## 문제 해결
+## Troubleshooting
 
-### 인증 오류
+### Authentication Errors
 
 ```bash
-# 토큰 상태 확인
+# Check token status
 vaultctl token info
 
-# 토큰 만료 시
-vaultctl auth login  # 1Password에서 재로드
-# 또는
-sudo nano /etc/vaultctl/env  # 토큰 직접 업데이트
+# On token expiration (auto-reissue with AppRole)
+vaultctl auth login --approle
+# Or manually update token
+sudo nano /etc/vaultctl/config
 ```
 
-### APT 업데이트 실패
+### APT Update Failures
 
 ```bash
-# GPG 키 문제
+# GPG key issues
 sudo rm /usr/share/keyrings/internal-apt.gpg
 curl -fsSL -u apt:PASS https://apt.example.com/KEY.gpg | \
     sudo gpg --dearmor -o /usr/share/keyrings/internal-apt.gpg
 
-# 인증 문제
-cat /etc/apt/auth.conf.d/internal.conf  # 확인
+# Authentication issues
+cat /etc/apt/auth.conf.d/internal.conf  # Verify
 sudo apt update 2>&1 | grep -i auth
 ```
 
-### systemd 타이머 문제
+### systemd Timer Issues
 
 ```bash
-# 타이머 상태 확인
+# Check timer status
 systemctl status vaultctl-renew.timer
 systemctl list-timers | grep vaultctl
 
-# 수동 실행 테스트
+# Manual execution test
 sudo systemctl start vaultctl-renew.service
 journalctl -u vaultctl-renew.service -f
 ```
 
-### Vault 연결 문제
+### Vault Connection Issues
 
 ```bash
-# 연결 테스트
+# Test connection
 vaultctl setup test
 
-# 직접 확인
+# Direct verification
 curl -s https://vault.example.com/v1/sys/health | jq
 
-# 환경 변수 확인
+# Check environment variables
 vaultctl config
 ```
 
 ---
 
-## 파일 구조
+## File Structure
 
 ```
 vaultctl/
-├── src/vaultctl/           # Python 소스 코드
-│   ├── cli.py              # 메인 CLI
-│   ├── config.py           # 설정 관리
-│   ├── vault_client.py     # Vault API 클라이언트
-│   ├── onepassword.py      # 1Password 연동
-│   ├── utils.py            # 유틸리티
-│   └── commands/           # 서브 명령어
-│       ├── auth.py         # 인증 관리
-│       ├── lxc.py          # LXC 관리
-│       ├── docker.py       # Docker 환경변수
-│       ├── token.py        # 토큰 관리
-│       ├── setup.py        # 초기 설정
-│       └── extended.py     # 확장 명령어 (run, sh, scan, redact, watch)
-├── systemd/                # systemd 유닛 파일
-│   ├── vaultctl-renew.service
-│   ├── vaultctl-renew.timer
-│   └── env.example
-├── scripts/                # 설치/설정 스크립트
-│   ├── install.sh          # 클라이언트 설치
-│   ├── setup-apt-server-traefik.sh  # APT 서버 (Traefik용)
-│   └── setup-apt-server.sh          # APT 서버 (독립)
+├── src/vaultctl/           # Python source code
+│   ├── cli.py              # Main CLI
+│   ├── config.py           # Configuration management
+│   ├── vault_client.py     # Vault API client
+│   ├── utils.py            # Utilities
+│   ├── templates.py        # Jinja2 template rendering
+│   ├── templates/          # Config file templates (.j2)
+│   │   ├── config.j2       # vaultctl config template
+│   │   └── apt/            # APT server templates
+│   │       ├── Caddyfile.j2
+│   │       ├── nginx.conf.j2
+│   │       ├── index.html.j2
+│   │       ├── setup-client.sh.j2
+│   │       ├── distributions.j2
+│   │       ├── options.j2
+│   │       ├── gpg-batch.j2
+│   │       ├── apt-config.j2
+│   │       ├── fancyindex-header.html.j2
+│   │       └── fancyindex-footer.html.j2
+│   └── commands/           # Subcommands
+│       ├── auth.py         # Authentication management
+│       ├── lxc.py          # LXC management
+│       ├── docker.py       # Docker env vars
+│       ├── token.py        # Token management
+│       ├── setup.py        # Initial setup (init, apt-server, apt-client, systemd)
+│       ├── repo.py         # APT repository management (add, remove, list, info)
+│       └── extended.py     # Extended commands (run, sh, scan, redact, watch)
+├── packaging/              # deb package configuration
+│   ├── etc/
+│   │   └── config.example  # vaultctl config example
+│   ├── scripts/            # Package install/remove scripts
+│   └── systemd/            # systemd unit files
+│       ├── vaultctl-renew.service
+│       └── vaultctl-renew.timer
 ├── .github/workflows/      # GitHub Actions
 │   └── release.yml
-├── build-deb.sh           # deb 패키지 빌드
-├── pyproject.toml         # Poetry 설정
+├── build-deb.sh           # deb package build
+├── vaultctl.spec          # PyInstaller spec
+├── pyproject.toml         # Poetry configuration
 └── README.md
 ```
 
 ---
 
-## 라이선스
+## License
 
 MIT License
 
 ---
 
-## teller와의 비교
+## Comparison with teller
 
-[teller](https://github.com/tellerops/teller)는 유사한 목적의 오픈소스 도구입니다.
+[teller](https://github.com/tellerops/teller) is an open-source tool with similar purposes.
 
-| 기능 | teller | vaultctl |
-|------|--------|----------|
-| **언어** | Rust | Python |
-| **프로바이더** | 10+ (Vault, AWS, GCP 등) | Vault + 1Password |
-| **프로세스 실행** | ✅ `teller run` | ✅ `vaultctl run` |
-| **셸 통합** | ✅ `teller sh` | ✅ `vaultctl sh` |
-| **비밀 스캔** | ✅ `teller scan` | ✅ `vaultctl scan` |
-| **로그 리다크션** | ✅ `teller redact` | ✅ `vaultctl redact` |
-| **템플릿 렌더링** | ✅ Tera | ❌ |
-| **프로바이더 동기화** | ✅ `teller copy` | ❌ |
-| **변경 감지** | ❌ | ✅ `vaultctl watch` |
-| **1Password 통합** | ❌ | ✅ Touch ID |
-| **LXC 전용 관리** | ❌ | ✅ |
-| **토큰 자동 갱신** | ❌ | ✅ systemd timer |
-| **클립보드 복사** | ❌ | ✅ |
-| **APT 패키지** | ❌ 바이너리만 | ✅ deb + APT 저장소 |
+| Feature | teller | vaultctl |
+|---------|--------|----------|
+| **Language** | Rust | Python |
+| **Providers** | 10+ (Vault, AWS, GCP, etc.) | Vault only |
+| **Process execution** | ✅ `teller run` | ✅ `vaultctl run` |
+| **Shell integration** | ✅ `teller sh` | ✅ `vaultctl sh` |
+| **Secret scanning** | ✅ `teller scan` | ✅ `vaultctl scan` |
+| **Log redaction** | ✅ `teller redact` | ✅ `vaultctl redact` |
+| **Template rendering** | ✅ Tera | ❌ |
+| **Provider sync** | ✅ `teller copy` | ❌ |
+| **Change detection** | ❌ | ✅ `vaultctl watch` |
+| **LXC-specific management** | ❌ | ✅ |
+| **Auto token renewal** | ❌ | ✅ systemd timer |
+| **Clipboard copy** | ❌ | ✅ |
+| **APT package** | ❌ Binary only | ✅ deb + APT repo |
 
-**언제 teller를 사용?**
-- 다중 클라우드 환경 (AWS + GCP + Azure)
-- 프로바이더 간 비밀 동기화 필요
-- Tera 템플릿 렌더링 필요
+**When to use teller?**
+- Multi-cloud environment (AWS + GCP + Azure)
+- Need provider-to-provider secret sync
+- Need Tera template rendering
 
-**언제 vaultctl을 사용?**
-- Proxmox + Vault 단일 환경
-- 1Password Touch ID 인증 원함
-- LXC 컨테이너 관리
-- 비밀 변경 시 자동 재시작 필요
+**When to use vaultctl?**
+- Proxmox + Vault single environment
+- LXC container management
+- Need auto-restart on secret change
+- Need APT repository setup

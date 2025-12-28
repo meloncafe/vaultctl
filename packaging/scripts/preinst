@@ -1,0 +1,24 @@
+#!/bin/bash
+# ─────────────────────────────────────────────────────────────────────────────
+# vaultctl - Pre-installation script (preinst)
+# vaultctl - 설치 전 스크립트 (preinst)
+#
+# This script runs before the package files are unpacked.
+# 이 스크립트는 패키지 파일이 풀리기 전에 실행됩니다.
+#
+# Arguments / 인자:
+#   $1 = "install"   : Fresh installation / 신규 설치
+#   $1 = "upgrade"   : Upgrading from previous version / 이전 버전에서 업그레이드
+#   $1 = "abort-upgrade" : Aborting an upgrade / 업그레이드 중단
+# ─────────────────────────────────────────────────────────────────────────────
+
+set -e
+
+# Remove old systemd files on upgrade/install to ensure new version is applied
+# 업그레이드/설치 시 기존 systemd 파일 삭제 (새 버전으로 교체 보장)
+if [ "$1" = "upgrade" ] || [ "$1" = "install" ]; then
+    rm -f /lib/systemd/system/vaultctl-renew.service
+    rm -f /lib/systemd/system/vaultctl-renew.timer
+fi
+
+exit 0

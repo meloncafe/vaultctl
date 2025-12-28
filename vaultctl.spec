@@ -8,12 +8,16 @@ block_cipher = None
 
 # 소스 경로
 src_path = Path("src")
+templates_path = src_path / "vaultctl" / "templates"
 
 a = Analysis(
     [str(src_path / "vaultctl" / "__main__.py")],
     pathex=[str(src_path)],
     binaries=[],
-    datas=[],
+    datas=[
+        # Include Jinja2 templates / Jinja2 템플릿 포함
+        (str(templates_path), "vaultctl/templates"),
+    ],
     hiddenimports=[
         # vaultctl 모듈
         "vaultctl",
@@ -21,12 +25,14 @@ a = Analysis(
         "vaultctl.config",
         "vaultctl.vault_client",
         "vaultctl.utils",
+        "vaultctl.templates",
         "vaultctl.commands",
         "vaultctl.commands.auth",
         "vaultctl.commands.docker",
         "vaultctl.commands.lxc",
         "vaultctl.commands.setup",
         "vaultctl.commands.token",
+        "vaultctl.commands.repo",
         "vaultctl.commands.extended",
         # 외부 의존성
         "typer",
@@ -36,6 +42,7 @@ a = Analysis(
         "pydantic_settings",
         "dotenv",
         "keyring",
+        "jinja2",
         # typer 관련
         "typer.core",
         "typer.main",
@@ -49,6 +56,10 @@ a = Analysis(
         # pydantic 관련
         "pydantic.fields",
         "pydantic_settings.sources",
+        # jinja2 관련
+        "jinja2.ext",
+        "jinja2.loaders",
+        "markupsafe",
     ],
     hookspath=[],
     hooksconfig={},

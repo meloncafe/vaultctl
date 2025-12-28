@@ -1,0 +1,71 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# vaultctl Configuration
+# vaultctl 설정
+#
+# Copy this file to /etc/vaultctl/config and edit:
+# 이 파일을 /etc/vaultctl/config로 복사하고 편집하세요:
+#
+#   sudo cp /etc/vaultctl/config.example /etc/vaultctl/config
+#   sudo chmod 600 /etc/vaultctl/config
+#   sudo nano /etc/vaultctl/config
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Vault Server Configuration / Vault 서버 설정
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Vault server address (required)
+# Vault 서버 주소 (필수)
+VAULT_ADDR=https://vault.example.com
+VAULTCTL_VAULT_ADDR=https://vault.example.com
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Authentication (choose one) / 인증 설정 (아래 두 가지 중 하나 선택)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Option 1: AppRole authentication (recommended for servers)
+# 옵션 1: AppRole 인증 (서버용 권장)
+# Automatically issues new token when expired / 토큰 만료 시 자동 발급
+# ─────────────────────────────────────────────────────────────────────────────
+# VAULTCTL_APPROLE_ROLE_ID=xxxx-xxxx-xxxx-xxxx-xxxx
+# VAULTCTL_APPROLE_SECRET_ID=yyyy-yyyy-yyyy-yyyy-yyyy
+# VAULTCTL_APPROLE_MOUNT=approle
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Option 2: Direct token (not recommended for production)
+# 옵션 2: 토큰 직접 입력 (프로덕션 비권장)
+# Requires manual renewal when expired / 만료 시 수동 갱신 필요
+# ─────────────────────────────────────────────────────────────────────────────
+# VAULT_TOKEN=hvs.xxxxxxxxxxxxx
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# KV Path Configuration / KV 경로 설정
+# ═══════════════════════════════════════════════════════════════════════════════
+VAULTCTL_KV_MOUNT=proxmox
+VAULTCTL_KV_LXC_PATH=lxc
+VAULTCTL_KV_DOCKER_PATH=docker
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Token Renewal Settings / 토큰 갱신 설정
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Renew token when TTL is below this threshold (seconds)
+# 토큰 TTL이 이 값 이하일 때 갱신 (초)
+VAULTCTL_TOKEN_RENEW_THRESHOLD=3600
+
+# Request this increment when renewing token (seconds)
+# 토큰 갱신 시 요청할 연장 시간 (초)
+VAULTCTL_TOKEN_RENEW_INCREMENT=86400
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Optional Settings / 선택 설정
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Skip TLS verification (not recommended)
+# TLS 검증 건너뛰기 (비권장)
+# VAULT_SKIP_VERIFY=false
+
+# CA certificate path for custom CA
+# 커스텀 CA 인증서 경로
+# VAULT_CACERT=/etc/ssl/certs/custom-ca.crt

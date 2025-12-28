@@ -1,0 +1,59 @@
+{# Nginx configuration template for APT repository #}
+{# APT 저장소용 Nginx 설정 템플릿 #}
+server {
+    listen {{ listen_port }};
+    server_name {{ domain }};
+    
+    root {{ repo_path }};
+{% if enable_auth %}
+    
+    # Public files (no authentication required)
+    # 공개 파일 (인증 불필요)
+    location ~ ^/(key\.gpg|key|setup-client\.sh|index\.html|\.fancyindex/.*)$ {
+        allow all;
+    }
+    
+    # Protected with authentication + fancyindex
+    # 인증이 필요한 영역 + fancyindex
+    location / {
+        auth_basic "APT Repository";
+        auth_basic_user_file {{ htpasswd_path }};
+        
+        fancyindex on;
+        fancyindex_exact_size off;
+        fancyindex_localtime on;
+        fancyindex_header "/.fancyindex/header.html";
+        fancyindex_footer "/.fancyindex/footer.html";
+        fancyindex_show_path off;
+        fancyindex_name_length 255;
+        fancyindex_time_format "%Y-%m-%d %H:%M";
+    }
+{% else %}
+    
+    # Directory listing with fancyindex (public)
+    # 디렉토리 목록 - fancyindex (공개)
+    location / {
+        fancyindex on;
+        fancyindex_exact_size off;
+        fancyindex_localtime on;
+        fancyindex_header "/.fancyindex/header.html";
+        fancyindex_footer "/.fancyindex/footer.html";
+        fancyindex_show_path off;
+        fancyindex_name_length 255;
+        fancyindex_time_format "%Y-%m-%d %H:%M";
+    }
+{% endif %}
+
+    # Disable caching for repository metadata
+    # 저장소 메타데이터 캐싱 비활성화
+    location /dists/ {
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+{% if enable_auth %}
+        auth_basic "APT Repository";
+        auth_basic_user_file {{ htpasswd_path }};
+{% endif %}
+    }
+    
+    access_log /var/log/nginx/apt-access.log;
+    error_log /var/log/nginx/apt-error.log;
+}

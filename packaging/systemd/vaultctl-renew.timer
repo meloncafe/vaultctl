@@ -1,0 +1,19 @@
+[Unit]
+Description=Vault Token Auto Renew Timer
+# Vault 토큰 자동 갱신 타이머
+
+[Timer]
+# Run hourly / 매시간 실행
+OnCalendar=hourly
+
+# First run 5 minutes after boot / 시스템 부팅 후 5분 뒤 첫 실행
+OnBootSec=5min
+
+# Catch up missed runs / 놓친 실행 복구
+Persistent=true
+
+# Random delay to prevent simultaneous runs / 동시 실행 방지용 랜덤 지연
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

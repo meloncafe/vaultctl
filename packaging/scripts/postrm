@@ -1,0 +1,29 @@
+#!/bin/bash
+# ─────────────────────────────────────────────────────────────────────────────
+# vaultctl - Post-removal script (postrm)
+# vaultctl - 제거 후 스크립트 (postrm)
+#
+# This script runs after package files are removed.
+# 이 스크립트는 패키지 파일이 제거된 후 실행됩니다.
+#
+# Arguments / 인자:
+#   $1 = "remove"  : After normal removal / 일반 제거 후
+#   $1 = "purge"   : After complete removal / 완전 제거 후
+#   $1 = "upgrade" : After upgrade / 업그레이드 후
+# ─────────────────────────────────────────────────────────────────────────────
+
+set -e
+
+# Reload systemd to recognize removed unit files
+# systemd 리로드 (제거된 유닛 파일 인식)
+if command -v systemctl &> /dev/null; then
+    systemctl daemon-reload
+fi
+
+# On purge, remove all config files
+# purge 시 설정 파일 완전 삭제
+if [[ "$1" = "purge" ]]; then
+    rm -rf /etc/vaultctl
+fi
+
+exit 0

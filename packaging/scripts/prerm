@@ -1,0 +1,26 @@
+#!/bin/bash
+# ─────────────────────────────────────────────────────────────────────────────
+# vaultctl - Pre-removal script (prerm)
+# vaultctl - 제거 전 스크립트 (prerm)
+#
+# This script runs before package files are removed.
+# 이 스크립트는 패키지 파일이 제거되기 전에 실행됩니다.
+#
+# Arguments / 인자:
+#   $1 = "remove"  : Normal removal / 일반 제거
+#   $1 = "purge"   : Complete removal with config / 설정 포함 완전 제거
+#   $1 = "upgrade" : Upgrading to new version / 새 버전으로 업그레이드
+# ─────────────────────────────────────────────────────────────────────────────
+
+set -e
+
+# Only disable timer on full removal (not on upgrade)
+# 완전 제거 시에만 타이머 비활성화 (업그레이드 시에는 유지)
+if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
+    if command -v systemctl &> /dev/null; then
+        systemctl stop vaultctl-renew.timer 2>/dev/null || true
+        systemctl disable vaultctl-renew.timer 2>/dev/null || true
+    fi
+fi
+
+exit 0
