@@ -130,24 +130,29 @@ jobs:
               systemctl reset-failed vaultctl-renew.service 2>/dev/null || true
               systemctl reset-failed vaultctl-renew.timer 2>/dev/null || true
               
-              # timer가 활성화되어 있으면 서비스 한 번 실행
-              if systemctl is-enabled vaultctl-renew.timer &>/dev/null; then
+              # 설정 파일이 존재하면 timer 활성화 및 서비스 실행
+              if [[ -f /etc/vaultctl/env ]]; then
+                  systemctl enable vaultctl-renew.timer 2>/dev/null || true
+                  systemctl start vaultctl-renew.timer 2>/dev/null || true
                   systemctl start vaultctl-renew.service 2>/dev/null || true
               fi
           fi
-          echo ""
-          echo "╔═══════════════════════════════════════════════════════════╗"
-          echo "║  vaultctl installed successfully!                         ║"
-          echo "╠═══════════════════════════════════════════════════════════╣"
-          echo "║  Quick setup:                                             ║"
-          echo "║    sudo vaultctl setup init                               ║"
-          echo "║                                                           ║"
-          echo "║  Or manual:                                               ║"
-          echo "║    sudo cp /etc/vaultctl/env.example /etc/vaultctl/env    ║"
-          echo "║    sudo chmod 600 /etc/vaultctl/env                       ║"
-          echo "║    sudo nano /etc/vaultctl/env                            ║"
-          echo "║    sudo systemctl enable --now vaultctl-renew.timer       ║"
-          echo "╚═══════════════════════════════════════════════════════════╝"
+          # 설정 파일 생성 안내 (초기 설치 시)
+          if [[ ! -f /etc/vaultctl/env ]]; then
+              echo ""
+              echo "╔═══════════════════════════════════════════════════════════╗"
+              echo "║  vaultctl installed successfully!                         ║"
+              echo "╠═══════════════════════════════════════════════════════════╣"
+              echo "║  Quick setup:                                             ║"
+              echo "║    sudo vaultctl setup init                               ║"
+              echo "║                                                           ║"
+              echo "║  Or manual:                                               ║"
+              echo "║    sudo cp /etc/vaultctl/env.example /etc/vaultctl/env    ║"
+              echo "║    sudo chmod 600 /etc/vaultctl/env                       ║"
+              echo "║    sudo nano /etc/vaultctl/env                            ║"
+              echo "║    sudo systemctl enable --now vaultctl-renew.timer       ║"
+              echo "╚═══════════════════════════════════════════════════════════╝"
+          fi
           EOF
           
           cat > scripts/prerm << 'EOF'

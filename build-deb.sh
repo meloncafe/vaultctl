@@ -1,7 +1,7 @@
 #!/bin/bash
 # ─────────────────────────────────────────────────────────────────────────────
 # vaultctl deb 패키지 빌드 스크립트
-# 
+#
 # 요구사항:
 #   - Python 3.10+
 #   - Poetry
@@ -49,19 +49,19 @@ echo ""
 # ─────────────────────────────────────────────────────────────────────────────
 check_deps() {
     local missing=()
-    
+
     if ! command -v python3 &> /dev/null; then
         missing+=("python3")
     fi
-    
+
     if ! command -v poetry &> /dev/null; then
         missing+=("poetry")
     fi
-    
+
     if ! command -v fpm &> /dev/null; then
         missing+=("fpm (gem install fpm)")
     fi
-    
+
     if [[ ${#missing[@]} -gt 0 ]]; then
         echo -e "${RED}✗ 필요한 도구가 없습니다:${NC}"
         for dep in "${missing[@]}"; do
@@ -69,7 +69,7 @@ check_deps() {
         done
         exit 1
     fi
-    
+
     echo -e "${GREEN}✓${NC} 의존성 확인 완료"
 }
 
@@ -96,7 +96,7 @@ install_deps() {
 # ─────────────────────────────────────────────────────────────────────────────
 build_binary() {
     echo -e "${YELLOW}바이너리 빌드 중...${NC}"
-    
+
     # PyInstaller 실행
     poetry run pyinstaller \
         --clean \
@@ -105,18 +105,18 @@ build_binary() {
         --workpath "$BUILD_DIR/work" \
         --specpath "$BUILD_DIR" \
         vaultctl.spec
-    
+
     # 바이너리 확인
     if [[ ! -f "$BUILD_DIR/dist/vaultctl" ]]; then
         echo -e "${RED}✗ 바이너리 빌드 실패${NC}"
         exit 1
     fi
-    
+
     # 실행 권한
     chmod +x "$BUILD_DIR/dist/vaultctl"
-    
+
     echo -e "${GREEN}✓${NC} 바이너리 빌드 완료: $BUILD_DIR/dist/vaultctl"
-    
+
     # 바이너리 정보
     ls -lh "$BUILD_DIR/dist/vaultctl"
     file "$BUILD_DIR/dist/vaultctl"
@@ -127,16 +127,16 @@ build_binary() {
 # ─────────────────────────────────────────────────────────────────────────────
 create_package_structure() {
     echo -e "${YELLOW}패키지 구조 생성 중...${NC}"
-    
+
     # 디렉토리 생성
     mkdir -p "$PKG_ROOT/usr/bin"
     mkdir -p "$PKG_ROOT/etc/vaultctl"
     mkdir -p "$PKG_ROOT/lib/systemd/system"
     mkdir -p "$PKG_ROOT/usr/share/doc/$PACKAGE_NAME"
-    
+
     # 바이너리 복사
     cp "$BUILD_DIR/dist/vaultctl" "$PKG_ROOT/usr/bin/"
-    
+
     # 설정 파일
     cat > "$PKG_ROOT/etc/vaultctl/config.env.example" << 'EOF'
 # vaultctl 설정 파일
@@ -214,7 +214,7 @@ EOF
 
     # 문서
     cp README.md "$PKG_ROOT/usr/share/doc/$PACKAGE_NAME/"
-    
+
     # changelog
     cat > "$PKG_ROOT/usr/share/doc/$PACKAGE_NAME/changelog" << EOF
 vaultctl ($VERSION) stable; urgency=medium
@@ -228,7 +228,7 @@ vaultctl ($VERSION) stable; urgency=medium
  -- $MAINTAINER  $(date -R)
 EOF
     gzip -9 "$PKG_ROOT/usr/share/doc/$PACKAGE_NAME/changelog"
-    
+
     echo -e "${GREEN}✓${NC} 패키지 구조 생성 완료"
 }
 
@@ -237,7 +237,7 @@ EOF
 # ─────────────────────────────────────────────────────────────────────────────
 create_scripts() {
     mkdir -p "$BUILD_DIR/scripts"
-    
+
     # preinst (설치 전) - 기존 systemd 파일 정리
     cat > "$BUILD_DIR/scripts/preinst" << 'EOF'
 #!/bin/bash
@@ -257,19 +257,21 @@ EOF
 #!/bin/bash
 set -e
 
-# systemd 리로드 및 실패 상태 초기화
 if command -v systemctl &> /dev/null; then
+    # systemd 리로드 및 실패 상태 초기화
     systemctl daemon-reload
     systemctl reset-failed vaultctl-renew.service 2>/dev/null || true
     systemctl reset-failed vaultctl-renew.timer 2>/dev/null || true
-    
-    # timer가 활성화되어 있으면 서비스 한 번 실행 (업그레이드 후 정상 작동 확인)
-    if systemctl is-enabled vaultctl-renew.timer &>/dev/null; then
+
+    # 설정 파일이 존재하면 timer 활성화 및 서비스 실행
+    if [[ -f /etc/vaultctl/env ]]; then
+        systemctl enable vaultctl-renew.timer 2>/dev/null || true
+        systemctl start vaultctl-renew.timer 2>/dev/null || true
         systemctl start vaultctl-renew.service 2>/dev/null || true
     fi
 fi
 
-# 설정 파일 생성 안내
+# 설정 파일 생성 안내 (초기 설치 시)
 if [[ ! -f /etc/vaultctl/env ]]; then
     echo ""
     echo "╔═══════════════════════════════════════════════════════════╗"
@@ -329,7 +331,7 @@ EOF
 # ─────────────────────────────────────────────────────────────────────────────
 build_deb() {
     echo -e "${YELLOW}deb 패키지 생성 중...${NC}"
-    
+
     fpm \
         --input-type dir \
         --output-type deb \
@@ -352,7 +354,7 @@ build_deb() {
         --package "$DIST_DIR/${PACKAGE_NAME}_${VERSION}_${ARCH}.deb" \
         --chdir "$PKG_ROOT" \
         .
-    
+
     echo -e "${GREEN}✓${NC} deb 패키지 생성 완료"
     ls -lh "$DIST_DIR/"*.deb
 }
@@ -362,17 +364,17 @@ build_deb() {
 # ─────────────────────────────────────────────────────────────────────────────
 verify_package() {
     echo -e "${YELLOW}패키지 검증 중...${NC}"
-    
+
     DEB_FILE="$DIST_DIR/${PACKAGE_NAME}_${VERSION}_${ARCH}.deb"
-    
+
     echo ""
     echo "패키지 정보:"
     dpkg-deb --info "$DEB_FILE"
-    
+
     echo ""
     echo "패키지 내용:"
     dpkg-deb --contents "$DEB_FILE"
-    
+
     echo ""
     echo -e "${GREEN}✓${NC} 패키지 검증 완료"
 }
