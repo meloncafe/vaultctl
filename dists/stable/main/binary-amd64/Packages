@@ -1,0 +1,19 @@
+Package: vaultctl
+Architecture: amd64
+Version: 0.0.8
+Priority: optional
+Section: default
+Maintainer: vaultctl maintainers
+Installed-Size: 17655
+Depends: ca-certificates
+Filename: pool/main/vaultctl_0.0.8_amd64.deb
+Size: 17865636
+MD5sum: ab20bfd50ea7f44597ebf35768152a74
+SHA1: 62626da17f89ddf8ceec4ced088e72299c04fb3c
+SHA256: 75f70d180aa55c3345c69eacfc5a0e74b22b72f16ec6ab7ddbd9e44911884d9e
+SHA512: ba644bd7c2588977af1c1f13838700e5d0ce94edb28d928dda677bd6a79634b6efdd85f91128f4ff64a7a0569775476c26e8b6702bdc28845b95db008f94a77a
+Homepage: https://github.com/meloncafe/vaultctl
+Description: HashiCorp Vault CLI with AppRole authentication
+License: MIT
+Vendor: none
+

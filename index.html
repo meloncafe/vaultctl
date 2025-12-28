@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>vaultctl APT Repository</title>
+  <style>
+    :root { --bg: #0d1117; --fg: #c9d1d9; --accent: #58a6ff; --code-bg: #161b22; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+           background: var(--bg); color: var(--fg); max-width: 800px; margin: 0 auto; padding: 40px 20px; }
+    h1 { color: var(--accent); }
+    h2 { border-bottom: 1px solid #30363d; padding-bottom: 8px; margin-top: 32px; }
+    pre { background: var(--code-bg); padding: 16px; border-radius: 6px; overflow-x: auto; }
+    code { font-family: 'SF Mono', Monaco, monospace; font-size: 14px; }
+    a { color: var(--accent); }
+    .badge { display: inline-block; background: #238636; color: white; padding: 4px 8px; 
+             border-radius: 4px; font-size: 12px; margin-left: 8px; }
+  </style>
+</head>
+<body>
+  <h1>🔐 vaultctl <span class="badge">APT Repository</span></h1>
+  <p>HashiCorp Vault CLI with AppRole authentication for Ubuntu/Debian</p>
+  
+  <h2>📦 Installation</h2>
+  <pre><code># Add APT repository
+echo "deb [trusted=yes] https://meloncafe.github.io/vaultctl stable main" | \
+    sudo tee /etc/apt/sources.list.d/vaultctl.list
+
+# Install
+sudo apt update
+sudo apt install vaultctl</code></pre>
+  
+  <h2>⚡ Quick Setup</h2>
+  <pre><code>sudo vaultctl setup init</code></pre>
+  
+  <h2>🔗 Links</h2>
+  <ul>
+    <li><a href="https://github.com/meloncafe/vaultctl">GitHub Repository</a></li>
+    <li><a href="https://github.com/meloncafe/vaultctl/releases">All Releases</a></li>
+  </ul>
+  
+  <h2>✨ Features</h2>
+  <ul>
+    <li>🔐 AppRole authentication (auto token renewal)</li>
+    <li>📦 LXC container secrets management</li>
+    <li>🐳 Docker .env file generation</li>
+    <li>🔄 Automatic token renewal (systemd timer)</li>
+    <li>📋 Clipboard copy support</li>
+  </ul>
+</body>
+</html>

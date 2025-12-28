@@ -1,0 +1,14 @@
+Origin: vaultctl
+Label: vaultctl  
+Suite: stable
+Codename: stable
+Architectures: amd64
+Components: main
+Description: vaultctl APT repository hosted on GitHub Pages
+Date: Sun, 28 Dec 2025 01:43:31 +0000
+MD5Sum:
+ 8f86342b3b52df31efe4742491c8dce0 663 main/binary-amd64/Packages
+ cf44aede601576e4e71136aedb34bcda 479 main/binary-amd64/Packages.gz
+SHA256:
+ b72c88e98f0a6f5b2149b7931c0f2136cab4af155d9212d569c627d11517f400 663 main/binary-amd64/Packages
+ b9f9e0442fbb7d3ac5a84ad3b4bafae6ab19139f5f141533fe3b16ddbf4663bc 479 main/binary-amd64/Packages.gz
