@@ -169,6 +169,8 @@ def write_env_file(path: str, data: dict[str, str], header: Optional[str] = None
             f.write(f"# {header}\n")
         f.write(f"# Generated at: {datetime.now().isoformat()}\n\n")
         for key, value in sorted(data.items()):
+            # Ensure value is string
+            value = str(value)
             # 특수문자가 있으면 따옴표로 감싸기
             if any(c in value for c in [" ", "'", '"', "$", "\n"]):
                 value = f'"{value}"'
