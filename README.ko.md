@@ -16,6 +16,7 @@ Proxmox LXC 컨테이너의 시크릿을 HashiCorp Vault로 중앙 관리하는 
   - [사용자 명령어](#사용자-명령어)
   - [관리자 명령어](#관리자-명령어)
 - [확장 명령어](#확장-명령어-teller-스타일)
+- [설정](#설정)
 - [APT 서버 구축](#apt-서버-구축)
 - [패키지 빌드 및 배포](#패키지-빌드-및-배포)
 - [보안 참고사항](#보안-참고사항)
@@ -43,29 +44,41 @@ Proxmox LXC 컨테이너의 시크릿을 HashiCorp Vault로 중앙 관리하는 
 │                      관리자 워크스테이션                      │
 ├─────────────────────────────────────────────────────────────┤
 │  vaultctl admin setup vault    # Policy, AppRole 생성       │
-│  vaultctl admin put lxc-000 DB_HOST=... DB_PASSWORD=...     │
+│  vaultctl admin put 100 DB_HOST=... DB_PASSWORD=...         │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                    HashiCorp Vault                           │
 ├─────────────────────────────────────────────────────────────┤
-│  proxmox/lxc/                                                │
-│  ├── lxc-000  { DB_HOST, DB_PASSWORD, REDIS_URL, ... }      │
-│  ├── lxc-162  { API_KEY, SECRET_KEY, ... }                  │
-│  └── lxc-163  { ... }                                        │
+│  kv/data/proxmox/lxc/                                        │
+│  ├── 100  { DB_HOST, DB_PASSWORD, REDIS_URL, ... }          │
+│  ├── 101  { API_KEY, SECRET_KEY, ... }                      │
+│  └── 102  { ... }                                            │
 └─────────────────────────────────────────────────────────────┘
                               │
               ┌───────────────┼───────────────┐
               ▼               ▼               ▼
 ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
-│   LXC 161       │ │   LXC 162       │ │   LXC 163       │
+│   LXC 100       │ │   LXC 101       │ │   LXC 102       │
 │   (n8n)         │ │   (gitea)       │ │   (postgres)    │
 ├─────────────────┤ ├─────────────────┤ ├─────────────────┤
 │ vaultctl init   │ │ vaultctl init   │ │ vaultctl init   │
-│ vaultctl env    │ │ vaultctl env    │ │ vaultctl env    │
-│   lxc-000       │ │   lxc-162       │ │   lxc-163       │
+│ vaultctl env 100│ │ vaultctl env 101│ │ vaultctl env 102│
 └─────────────────┘ └─────────────────┘ └─────────────────┘
+```
+
+### KV 경로 구조
+
+```
+{kv_mount}/data/{kv_path}/{name}
+
+예시:
+  kv_mount = "kv"
+  kv_path  = "proxmox/lxc"
+  name     = "100"
+  
+  전체 경로: kv/data/proxmox/lxc/100
 ```
 
 ---
@@ -111,14 +124,20 @@ vaultctl admin setup vault
 ```
 
 생성되는 것:
-- Policy: `vaultctl` (proxmox/*에 read/write)
+- Policy: `vaultctl` (kv/<path>/*에 read/write)
 - AppRole: `vaultctl` (Role ID, Secret ID 발급)
+
+입력 항목:
+- Vault 서버 주소
+- Root/Admin 토큰
+- KV 엔진 마운트 (기본: `kv`)
+- 시크릿 베이스 경로 (기본: `proxmox/lxc`)
 
 #### 2. 시크릿 등록
 
 ```bash
-# LXC 161용 시크릿 추가
-vaultctl admin put lxc-000 \
+# LXC 100용 시크릿 추가
+vaultctl admin put 100 \
   DB_HOST=postgres.internal \
   DB_PASSWORD=supersecret \
   REDIS_URL=redis://redis.internal:6379
@@ -127,7 +146,7 @@ vaultctl admin put lxc-000 \
 vaultctl admin list
 
 # 특정 시크릿 조회
-vaultctl admin get lxc-000
+vaultctl admin get 100
 ```
 
 ### 사용자 (각 LXC에서)
@@ -140,6 +159,8 @@ vaultctl init
 
 대화형으로 입력:
 - Vault 서버 주소
+- KV 엔진 마운트 (예: `kv`)
+- 시크릿 경로 (예: `proxmox/lxc`)
 - Role ID (관리자에게 받음)
 - Secret ID (관리자에게 받음)
 
@@ -151,7 +172,7 @@ vaultctl init
 cd /opt/myapp
 
 # .env 파일 생성
-vaultctl env lxc-000
+vaultctl env 100
 
 # Docker Compose 실행
 docker compose up -d
@@ -160,7 +181,7 @@ docker compose up -d
 또는 `vaultctl run`으로 직접 주입:
 
 ```bash
-vaultctl run lxc-000 -- docker compose up -d
+vaultctl run 100 -- docker compose up -d
 ```
 
 ---
@@ -190,37 +211,42 @@ $ vaultctl init
 
 🔐 Setup
 ╭──────────────────────────────────────╮
-│ vaultctl 초기 설정                    │
+│ vaultctl Initial Setup               │
 │                                       │
-│ Vault 연결 및 인증을 설정합니다.        │
-│ 이 설정은 한 번만 하면 됩니다.          │
+│ Configure Vault connection and       │
+│ authentication.                       │
+│ This setup only needs to be done once.│
 ╰──────────────────────────────────────╯
 
-Vault 서버 주소: https://vault.example.com
-✓ 연결 성공
+Vault server address: https://vault.example.com
+✓ Connection successful
 
-AppRole 인증 정보
+KV Secret Path
+KV engine mount [kv]: kv
+Secret path [proxmox/lxc]: proxmox/lxc
+
+AppRole Authentication
 Role ID: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 Secret ID: ********
 
-✓ 인증 성공
+✓ Authentication successful
   Policies: vaultctl, default
-  TTL: 1시간
+  TTL: 1 hour
 
-✓ 설정 저장: ~/.config/vaultctl/
+✓ Configuration saved: ~/.config/vaultctl/
 ```
 
 #### vaultctl env
 
 ```bash
 # 현재 디렉토리에 .env 생성
-vaultctl env lxc-000
+vaultctl env 100
 
 # 다른 경로에 저장
-vaultctl env lxc-000 -o /opt/myapp/.env
+vaultctl env 100 -o /opt/myapp/.env
 
 # stdout으로 출력
-vaultctl env lxc-000 --stdout
+vaultctl env 100 --stdout
 ```
 
 #### vaultctl status
@@ -228,25 +254,26 @@ vaultctl env lxc-000 --stdout
 ```bash
 $ vaultctl status
 
-vaultctl 상태
+vaultctl Status
 
-1. 설정
+1. Configuration
    Vault: https://vault.example.com
-   KV 경로: proxmox/lxc/
-   설정 디렉토리: ✓ ~/.config/vaultctl
+   KV Mount: kv
+   KV Path: proxmox/lxc/
+   Config Dir: ✓ ~/.config/vaultctl
 
-2. 연결
-   ✓ Vault 서버 연결됨
+2. Connection
+   ✓ Vault server connected
 
-3. 인증
-   ✓ 인증됨
+3. Authentication
+   ✓ Authenticated
    Policies: vaultctl, default
-   TTL: 58분
+   TTL: 58 minutes
 
-4. 시크릿 접근
-   ✓ 접근 가능 (5개 시크릿)
+4. Secrets Access
+   ✓ Access to kv/proxmox/lxc/ (5 secrets)
 
-✓ 모든 상태 정상
+✓ All checks passed
 ```
 
 ### 관리자 명령어
@@ -278,19 +305,19 @@ vaultctl admin list
 vaultctl admin list -v  # 상세
 
 # 특정 시크릿 조회
-vaultctl admin get lxc-000
-vaultctl admin get lxc-000 -f DB_PASSWORD       # 특정 필드만
-vaultctl admin get lxc-000 -f DB_PASSWORD -c    # 클립보드 복사
-vaultctl admin get lxc-000 --raw                # JSON 출력
+vaultctl admin get 100
+vaultctl admin get 100 -f DB_PASSWORD       # 특정 필드만
+vaultctl admin get 100 -f DB_PASSWORD -c    # 클립보드 복사
+vaultctl admin get 100 --raw                # JSON 출력
 
 # 시크릿 저장
-vaultctl admin put lxc-000 DB_HOST=localhost DB_PASSWORD=secret
-vaultctl admin put lxc-000 NEW_KEY=value --merge    # 기존 값과 병합
-vaultctl admin put lxc-000 ONLY_THIS=value --replace  # 전체 교체
+vaultctl admin put 100 DB_HOST=localhost DB_PASSWORD=secret
+vaultctl admin put 100 NEW_KEY=value --merge    # 기존 값과 병합
+vaultctl admin put 100 ONLY_THIS=value --replace  # 전체 교체
 
 # 삭제
-vaultctl admin delete lxc-000
-vaultctl admin delete lxc-000 --force  # 확인 없이
+vaultctl admin delete 100
+vaultctl admin delete 100 --force  # 확인 없이
 ```
 
 #### 일괄 작업
@@ -307,11 +334,11 @@ vaultctl admin import secrets.json --dry-run  # 검증만
 JSON 형식:
 ```json
 {
-  "lxc-000": {
+  "100": {
     "DB_HOST": "postgres.internal",
     "DB_PASSWORD": "secret123"
   },
-  "lxc-162": {
+  "101": {
     "API_KEY": "xxxx",
     "SECRET_KEY": "yyyy"
   }
@@ -323,22 +350,30 @@ JSON 형식:
 ```bash
 $ vaultctl admin setup vault
 
+Vault server address: https://vault.example.com
+Root/Admin token: ********
+
+Testing connection...
+✓ Connected
+
+KV Path Configuration
+KV engine mount [kv]: kv
+Secret base path [proxmox/lxc]: proxmox/lxc
+
 🔐 Vault Setup
 ╭──────────────────────────────────────╮
 │ This will create:                    │
 │ • Policy: vaultctl                   │
-│ • AppRole: vaultctl-role             │
-│ • KV secrets engine: proxmox/        │
+│ • AppRole: vaultctl                  │
+│ • Access: kv/data/proxmox/*          │
 ╰──────────────────────────────────────╯
 
-Vault server address [https://vault.example.com]: 
-Root/Admin token: ********
-
 1. KV Secrets Engine
-   ✓ Enabled: proxmox/
+   ✓ Exists: kv/
 
 2. Policy
    ✓ Created: vaultctl
+   Access: kv/data/proxmox/*
 
 3. AppRole Auth
    ✓ Enabled: approle/
@@ -352,6 +387,9 @@ Save these credentials securely!
 ────────────────────────────────────────
   Role ID:    xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
   Secret ID:  yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy
+
+  KV Mount:   kv
+  KV Path:    proxmox/lxc
 ────────────────────────────────────────
 ```
 
@@ -367,14 +405,14 @@ Vault 환경변수를 주입하며 프로세스를 실행합니다.
 
 ```bash
 # 환경변수 주입 실행
-vaultctl run lxc-000 -- node index.js
-vaultctl run lxc-000 -- docker compose up -d
+vaultctl run 100 -- node index.js
+vaultctl run 100 -- docker compose up -d
 
 # 셸 명령 실행
-vaultctl run lxc-000 --shell -- 'echo $DB_PASSWORD | base64'
+vaultctl run 100 --shell -- 'echo $DB_PASSWORD | base64'
 
 # 기존 환경변수 초기화 (격리 실행)
-vaultctl run lxc-000 --reset -- python app.py
+vaultctl run 100 --reset -- python app.py
 ```
 
 ### vaultctl sh
@@ -383,13 +421,13 @@ vaultctl run lxc-000 --reset -- python app.py
 
 ```bash
 # 현재 셸에 환경변수 로드
-eval "$(vaultctl sh lxc-000)"
+eval "$(vaultctl sh 100)"
 
 # .bashrc/.zshrc에 추가
-echo 'eval "$(vaultctl sh lxc-000)"' >> ~/.bashrc
+echo 'eval "$(vaultctl sh 100)"' >> ~/.bashrc
 
 # Fish 셸
-vaultctl sh lxc-000 --format fish | source
+vaultctl sh 100 --format fish | source
 ```
 
 ### vaultctl scan
@@ -410,7 +448,7 @@ vaultctl scan --error-if-found
 vaultctl scan --json
 
 # 특정 시크릿만 검색
-vaultctl scan --name lxc-000
+vaultctl scan --name 100
 ```
 
 ### vaultctl redact
@@ -437,13 +475,13 @@ Vault 비밀 변경 시 프로세스를 자동 재시작합니다.
 
 ```bash
 # 변경 감지 및 재시작
-vaultctl watch lxc-000 -- docker compose up -d
+vaultctl watch 100 -- docker compose up -d
 
 # 체크 간격 설정 (기본 60초)
-vaultctl watch lxc-000 --interval 300 -- docker compose up -d
+vaultctl watch 100 --interval 300 -- docker compose up -d
 
 # 재시작 대신 SIGHUP 전송
-vaultctl watch lxc-000 --on-change reload -- ./app
+vaultctl watch 100 --on-change reload -- ./app
 ```
 
 systemd 서비스 등록:
@@ -456,7 +494,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/vaultctl watch lxc-000 -- docker compose -f /opt/myapp/docker-compose.yml up
+ExecStart=/usr/bin/vaultctl watch 100 -- docker compose -f /opt/myapp/docker-compose.yml up
 Restart=always
 WorkingDirectory=/opt/myapp
 
@@ -481,6 +519,8 @@ WantedBy=multi-user.target
 ```bash
 # ~/.config/vaultctl/config
 VAULT_ADDR=https://vault.example.com
+VAULT_KV_MOUNT=kv
+VAULT_KV_PATH=proxmox/lxc
 VAULT_ROLE_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 VAULT_SECRET_ID=yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy
 ```
@@ -493,8 +533,16 @@ VAULT_SECRET_ID=yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy
 | `VAULTCTL_VAULT_TOKEN` | - | Vault 토큰 (선택) |
 | `VAULTCTL_APPROLE_ROLE_ID` | - | AppRole Role ID |
 | `VAULTCTL_APPROLE_SECRET_ID` | - | AppRole Secret ID |
-| `VAULTCTL_KV_MOUNT` | `proxmox` | KV 엔진 마운트 경로 |
-| `VAULTCTL_KV_LXC_PATH` | `lxc` | 시크릿 경로 |
+| `VAULTCTL_KV_MOUNT` | `kv` | KV 엔진 마운트 경로 |
+| `VAULTCTL_KV_PATH` | `proxmox/lxc` | 시크릿 베이스 경로 |
+
+### KV 경로 예시
+
+| 용도 | kv_mount | kv_path | 전체 경로 |
+|------|----------|---------|-----------|
+| Proxmox LXC | `kv` | `proxmox/lxc` | `kv/data/proxmox/lxc/100` |
+| Docker Swarm | `secrets` | `docker/swarm` | `secrets/data/docker/swarm/myapp` |
+| Kubernetes | `kv` | `k8s/prod` | `kv/data/k8s/prod/deployment` |
 
 ---
 
@@ -596,6 +644,20 @@ vaultctl status
 vaultctl init
 ```
 
+### 권한 거부 (Permission Denied)
+
+Policy 설정을 확인하세요:
+
+```bash
+# 현재 설정 확인
+vaultctl config
+
+# Policy가 올바른 경로를 허용하는지 확인
+# Policy에 다음이 포함되어야 합니다:
+#   path "kv/data/proxmox/*" { capabilities = [...] }
+#   path "kv/metadata/proxmox/*" { capabilities = [...] }
+```
+
 ### 연결 문제
 
 ```bash
@@ -634,6 +696,22 @@ vaultctl init
 | `vaultctl docker env <n>` | `vaultctl env <n>` |
 | `vaultctl token renew` | `vaultctl admin token renew` |
 | `vaultctl repo add` | `vaultctl admin repo add` |
+
+### 설정 변경
+
+이전 설정 형식:
+```bash
+VAULT_ADDR=...
+VAULT_KV_MOUNT=proxmox    # 마운트로 사용됨
+VAULT_KV_PATH=lxc         # 서브 경로
+```
+
+새 설정 형식:
+```bash
+VAULT_ADDR=...
+VAULT_KV_MOUNT=kv         # KV 엔진 마운트
+VAULT_KV_PATH=proxmox/lxc # KV 내 전체 경로
+```
 
 ---
 

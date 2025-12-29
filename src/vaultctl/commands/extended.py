@@ -78,16 +78,12 @@ def _get_authenticated_client() -> VaultClient:
     raise typer.Exit(1)
 
 
-def _get_secret_path(name: str) -> str:
-    """Get KV secret path / 시크릿 경로 생성."""
-    return f"{settings.kv_lxc_path}/{name}"
-
-
 def _get_secrets(name: str) -> dict:
     """Get secrets / 시크릿 조회."""
     client = _get_authenticated_client()
+    secret_path = settings.get_secret_path(name)
     try:
-        return client.kv_get(settings.kv_mount, _get_secret_path(name))
+        return client.kv_get(settings.kv_mount, secret_path)
     except VaultError:
         return {}
 
@@ -96,7 +92,7 @@ def _list_secrets() -> list[str]:
     """List secrets / 시크릿 목록."""
     client = _get_authenticated_client()
     try:
-        keys = client.kv_list(settings.kv_mount, settings.kv_lxc_path)
+        keys = client.kv_list(settings.kv_mount, settings.kv_path)
         return [k.rstrip("/") for k in keys]
     except VaultError:
         return []
@@ -107,7 +103,7 @@ def _list_secrets() -> list[str]:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def run_command(
-    name: str = typer.Argument(..., help="Secret name (e.g., lxc-000) / 시크릿 이름"),
+    name: str = typer.Argument(..., help="Secret name (e.g., 100) / 시크릿 이름"),
     command: List[str] = typer.Argument(..., help="Command to run / 실행할 명령어"),
     reset: bool = typer.Option(False, "--reset", "-r", help="Reset existing env vars / 기존 환경변수 초기화"),
     shell: bool = typer.Option(False, "--shell", "-s", help="Run through shell / 셸을 통해 실행"),
@@ -117,9 +113,9 @@ def run_command(
     
     \b
     Examples:
-        vaultctl run lxc-000 -- node index.js
-        vaultctl run lxc-000 --shell -- "echo $DB_PASSWORD"
-        vaultctl run lxc-000 -- docker compose up -d
+        vaultctl run 100 -- node index.js
+        vaultctl run 100 --shell -- "echo $DB_PASSWORD"
+        vaultctl run 100 -- docker compose up -d
     """
     secrets = _get_secrets(name)
     
@@ -155,7 +151,7 @@ def run_command(
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def shell_export(
-    name: str = typer.Argument(..., help="Secret name (e.g., lxc-000) / 시크릿 이름"),
+    name: str = typer.Argument(..., help="Secret name (e.g., 100) / 시크릿 이름"),
     _format: str = typer.Option("bash", "--format", "-f", help="Output format: bash, fish, zsh / 출력 형식"),
 ):
     """Generate shell export statements for eval.
@@ -163,10 +159,10 @@ def shell_export(
     
     \b
     Examples:
-        eval "$(vaultctl sh lxc-000)"
+        eval "$(vaultctl sh 100)"
         
     Add to .bashrc/.zshrc:
-        eval "$(vaultctl sh lxc-000)"
+        eval "$(vaultctl sh 100)"
     """
     secrets = _get_secrets(name)
     
@@ -204,7 +200,7 @@ def scan_secrets(
     \b
     Examples:
         vaultctl scan
-        vaultctl scan ./src --name lxc-000
+        vaultctl scan ./src --name 100
         vaultctl scan --error-if-found  # For CI/CD
     """
     # Collect secrets
@@ -355,12 +351,12 @@ def watch_and_restart(
     
     \b
     Examples:
-        vaultctl watch lxc-000 -- docker compose up -d
-        vaultctl watch lxc-000 --interval 300 -- systemctl restart myapp
+        vaultctl watch 100 -- docker compose up -d
+        vaultctl watch 100 --interval 300 -- systemctl restart myapp
     
     Register as systemd service:
         [Service]
-        ExecStart=/usr/bin/vaultctl watch lxc-000 -- docker compose up
+        ExecStart=/usr/bin/vaultctl watch 100 -- docker compose up
         Restart=always
     """
     def get_secrets_hash():

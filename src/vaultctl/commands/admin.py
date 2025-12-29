@@ -96,11 +96,6 @@ def _get_authenticated_client() -> VaultClient:
     raise typer.Exit(1)
 
 
-def _get_secret_path(name: str) -> str:
-    """Get KV secret path / 시크릿 경로 생성."""
-    return f"{settings.kv_lxc_path}/{name}"
-
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # Secret Management Commands (list, get, put, delete)
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -119,14 +114,15 @@ def list_secrets(
     client = _get_authenticated_client()
     
     try:
-        items = client.kv_list(settings.kv_mount, settings.kv_lxc_path)
+        items = client.kv_list(settings.kv_mount, settings.kv_path)
     except VaultError as e:
         console.print(f"[red]✗[/red] Failed to list: {e.message}")
+        console.print(f"  Path: {settings.kv_mount}/{settings.kv_path}/")
         raise typer.Exit(1)
 
     if not items:
         console.print("[yellow]![/yellow] No secrets found.")
-        console.print(f"  Path: {settings.kv_mount}/{settings.kv_lxc_path}/")
+        console.print(f"  Path: {settings.kv_mount}/{settings.kv_path}/")
         return
 
     table = Table(title="Secrets", show_header=True, header_style="bold cyan")
@@ -139,7 +135,8 @@ def list_secrets(
         for item in sorted(items):
             name = item.rstrip("/")
             try:
-                data = client.kv_get(settings.kv_mount, _get_secret_path(name))
+                secret_path = settings.get_secret_path(name)
+                data = client.kv_get(settings.kv_mount, secret_path)
                 keys = ", ".join(sorted(data.keys()))
                 if len(keys) > 50:
                     keys = keys[:50] + "..."
@@ -152,11 +149,12 @@ def list_secrets(
 
     console.print(table)
     console.print(f"\nTotal: {len(items)}")
+    console.print(f"[dim]Path: {settings.kv_mount}/{settings.kv_path}/[/dim]")
 
 
 @app.command("get")
 def get_secret(
-    name: str = typer.Argument(..., help="Secret name (e.g., lxc-000) / 시크릿 이름"),
+    name: str = typer.Argument(..., help="Secret name (e.g., 100) / 시크릿 이름"),
     field: Optional[str] = typer.Option(None, "--field", "-f", help="Specific field only / 특정 필드만 조회"),
     copy: bool = typer.Option(False, "--copy", "-c", help="Copy to clipboard / 클립보드에 복사"),
     raw: bool = typer.Option(False, "--raw", help="JSON output / JSON으로 출력"),
@@ -164,18 +162,20 @@ def get_secret(
     """Get secret / 시크릿 조회.
     
     Examples:
-        vaultctl admin get lxc-000
-        vaultctl admin get lxc-000 -f DB_PASSWORD
-        vaultctl admin get lxc-000 -f DB_PASSWORD --copy
-        vaultctl admin get lxc-000 --raw
+        vaultctl admin get 100
+        vaultctl admin get 100 -f DB_PASSWORD
+        vaultctl admin get 100 -f DB_PASSWORD --copy
+        vaultctl admin get 100 --raw
     """
     client = _get_authenticated_client()
+    secret_path = settings.get_secret_path(name)
     
     try:
-        data = client.kv_get(settings.kv_mount, _get_secret_path(name))
+        data = client.kv_get(settings.kv_mount, secret_path)
     except VaultError as e:
         if e.status_code == 404:
             console.print(f"[red]✗[/red] Secret not found: {name}")
+            console.print(f"  Path: {settings.kv_mount}/{secret_path}")
         else:
             console.print(f"[red]✗[/red] Failed to retrieve: {e.message}")
         raise typer.Exit(1)
@@ -215,37 +215,39 @@ def get_secret(
 
 @app.command("put")
 def put_secret(
-    name: str = typer.Argument(..., help="Secret name (e.g., lxc-000) / 시크릿 이름"),
+    name: str = typer.Argument(..., help="Secret name (e.g., 100) / 시크릿 이름"),
     data: list[str] = typer.Argument(..., help="KEY=value pairs / KEY=value 쌍들"),
     merge: bool = typer.Option(True, "--merge/--replace", help="Merge with existing (default) / Replace all / 기존 값과 병합 또는 교체"),
 ):
     """Store secret / 시크릿 저장.
     
     Examples:
-        vaultctl admin put lxc-000 DB_HOST=postgres.local DB_PASSWORD=secret
-        vaultctl admin put lxc-000 NEW_KEY=value --merge
-        vaultctl admin put lxc-000 ONLY_THIS=value --replace
+        vaultctl admin put 100 DB_HOST=postgres.local DB_PASSWORD=secret
+        vaultctl admin put 100 NEW_KEY=value --merge
+        vaultctl admin put 100 ONLY_THIS=value --replace
     """
     client = _get_authenticated_client()
+    secret_path = settings.get_secret_path(name)
     
     new_data = parse_key_value_args(data)
     if not new_data:
         console.print("[red]✗[/red] Provide data in KEY=value format.")
-        console.print("  Example: vaultctl admin put lxc-000 DB_HOST=localhost DB_PASSWORD=secret")
+        console.print("  Example: vaultctl admin put 100 DB_HOST=localhost DB_PASSWORD=secret")
         raise typer.Exit(1)
 
     # Merge with existing
     if merge:
         try:
-            existing = client.kv_get(settings.kv_mount, _get_secret_path(name))
+            existing = client.kv_get(settings.kv_mount, secret_path)
             existing.update(new_data)
             new_data = existing
         except VaultError:
             pass  # Create new
 
     try:
-        client.kv_put(settings.kv_mount, _get_secret_path(name), new_data)
+        client.kv_put(settings.kv_mount, secret_path, new_data)
         console.print(f"[green]✓[/green] Saved: {name}")
+        console.print(f"[dim]Path: {settings.kv_mount}/{secret_path}[/dim]")
 
         # Show saved content
         table = create_kv_table(new_data, title=f"Secret: {name}")
@@ -264,10 +266,11 @@ def delete_secret(
     """Delete secret / 시크릿 삭제.
     
     Examples:
-        vaultctl admin delete lxc-000
-        vaultctl admin delete lxc-000 --force
+        vaultctl admin delete 100
+        vaultctl admin delete 100 --force
     """
     client = _get_authenticated_client()
+    secret_path = settings.get_secret_path(name)
     
     if not force:
         confirm = typer.confirm(f"Delete '{name}'?")
@@ -276,7 +279,7 @@ def delete_secret(
             raise typer.Exit(0)
 
     try:
-        client.kv_delete(settings.kv_mount, _get_secret_path(name))
+        client.kv_delete(settings.kv_mount, secret_path)
         console.print(f"[green]✓[/green] Deleted: {name}")
     except VaultError as e:
         console.print(f"[red]✗[/red] Failed to delete: {e.message}")
@@ -292,8 +295,8 @@ def import_secrets(
     
     JSON format:
         {
-            "lxc-000": {"DB_HOST": "localhost", "DB_PASSWORD": "secret"},
-            "lxc-162": {"REDIS_URL": "redis://localhost:6379"}
+            "100": {"DB_HOST": "localhost", "DB_PASSWORD": "secret"},
+            "101": {"REDIS_URL": "redis://localhost:6379"}
         }
     
     Examples:
@@ -339,7 +342,8 @@ def import_secrets(
             success += 1
         else:
             try:
-                client.kv_put(settings.kv_mount, _get_secret_path(name), secret_data)
+                secret_path = settings.get_secret_path(name)
+                client.kv_put(settings.kv_mount, secret_path, secret_data)
                 console.print(f"  [green]✓[/green] {name}")
                 success += 1
             except VaultError as e:
@@ -362,7 +366,7 @@ def export_secrets(
     client = _get_authenticated_client()
     
     try:
-        items = client.kv_list(settings.kv_mount, settings.kv_lxc_path)
+        items = client.kv_list(settings.kv_mount, settings.kv_path)
     except VaultError as e:
         console.print(f"[red]✗[/red] Failed to list: {e.message}")
         raise typer.Exit(1)
@@ -375,7 +379,8 @@ def export_secrets(
     for item in items:
         name = item.rstrip("/")
         try:
-            data = client.kv_get(settings.kv_mount, _get_secret_path(name))
+            secret_path = settings.get_secret_path(name)
+            data = client.kv_get(settings.kv_mount, secret_path)
             result[name] = data
         except VaultError:
             result[name] = {}
@@ -401,7 +406,7 @@ def setup_vault(
     """Setup Vault policy and AppRole / Vault 정책 및 AppRole 생성.
     
     Creates:
-        - Policy: vaultctl (read/write to proxmox/*)
+        - Policy: vaultctl (read/write to kv/<path>/*)
         - AppRole: vaultctl
     
     Use --generate-secret to create a new Secret ID for an existing AppRole.
@@ -428,7 +433,6 @@ def setup_vault(
         console.print(f"[red]✗[/red] Connection failed: {e.message}")
         raise typer.Exit(1)
     
-    kv_mount = settings.kv_mount
     role_name = "vaultctl"
     policy_name = "vaultctl"
     
@@ -459,54 +463,61 @@ def setup_vault(
             console.print(f"[red]✗[/red] AppRole '{role_name}' not found. Run without -g to create it.")
             raise typer.Exit(1)
     
-    # Full setup
+    # Full setup - get path configuration
+    console.print("\n[bold]KV Path Configuration[/bold]")
+    console.print("[dim]This determines where secrets are stored and what the policy allows.[/dim]")
+    
+    kv_mount = Prompt.ask("KV engine mount", default="kv")
+    kv_path = Prompt.ask("Secret base path", default="proxmox/lxc")
+    
+    # Remove trailing slashes
+    kv_path = kv_path.strip("/")
+    
     console.print(Panel.fit(
         "[bold blue]Vault Setup[/bold blue]\n\n"
         "This will create:\n"
         f"• Policy: {policy_name}\n"
         f"• AppRole: {role_name}\n"
-        f"• KV secrets engine: {kv_mount}/",
+        f"• Access: {kv_mount}/data/{kv_path}/*",
         title="🔐 Vault Setup",
     ))
     
-    # 1. Enable KV secrets engine
+    # 1. Check KV secrets engine
     console.print("\n[bold]1. KV Secrets Engine[/bold]")
-    kv_mount = Prompt.ask("KV mount path", default=kv_mount)
     
     try:
-        # Check if already enabled
         mounts = client._request("GET", "sys/mounts")
         if f"{kv_mount}/" in mounts.get("data", {}):
-            console.print(f"   [green]✓[/green] Already enabled: {kv_mount}/")
+            console.print(f"   [green]✓[/green] Exists: {kv_mount}/")
         else:
-            client._request("POST", f"sys/mounts/{kv_mount}", data={
-                "type": "kv",
-                "options": {"version": "2"},
-            })
-            console.print(f"   [green]✓[/green] Enabled: {kv_mount}/")
+            console.print(f"   [yellow]![/yellow] KV engine '{kv_mount}' not found.")
+            console.print(f"   Enable it with: vault secrets enable -path={kv_mount} kv-v2")
     except VaultError as e:
         console.print(f"   [yellow]![/yellow] {e.message}")
     
-    # 2. Create policy
+    # 2. Create policy with correct paths
     console.print("\n[bold]2. Policy[/bold]")
-    policy_hcl = f'''
-# vaultctl policy
-# Read/write access to {kv_mount}/*
+    
+    # Extract the first path component for policy (e.g., "proxmox" from "proxmox/lxc")
+    policy_path = kv_path.split("/")[0] if "/" in kv_path else kv_path
+    
+    policy_hcl = f'''# vaultctl policy
+# Read/write access to {kv_mount}/{policy_path}/*
 
-path "{kv_mount}/data/*" {{
+path "{kv_mount}/data/{policy_path}/*" {{
   capabilities = ["create", "read", "update", "delete", "list"]
 }}
 
-path "{kv_mount}/metadata/*" {{
+path "{kv_mount}/metadata/{policy_path}/*" {{
   capabilities = ["list", "read", "delete"]
-}}
-
-path "auth/token/renew-self" {{
-  capabilities = ["update"]
 }}
 
 path "auth/token/lookup-self" {{
   capabilities = ["read"]
+}}
+
+path "auth/token/renew-self" {{
+  capabilities = ["update"]
 }}
 '''
     
@@ -515,6 +526,7 @@ path "auth/token/lookup-self" {{
             "policy": policy_hcl,
         })
         console.print(f"   [green]✓[/green] Created: {policy_name}")
+        console.print(f"   [dim]Access: {kv_mount}/data/{policy_path}/*[/dim]")
     except VaultError as e:
         console.print(f"   [red]✗[/red] Failed: {e.message}")
         raise typer.Exit(1)
@@ -572,6 +584,8 @@ path "auth/token/lookup-self" {{
         console.print(f"[yellow]{'─' * 60}[/yellow]")
         console.print(f"\n  Role ID:    {role_id}")
         console.print(f"  Secret ID:  {secret_id}")
+        console.print(f"\n  KV Mount:   {kv_mount}")
+        console.print(f"  KV Path:    {kv_path}")
         console.print(f"\n[yellow]{'─' * 60}[/yellow]")
         
     except VaultError as e:
@@ -581,9 +595,12 @@ path "auth/token/lookup-self" {{
     console.print("\n")
     console.print(Panel.fit(
         "[bold green]Setup Complete![/bold green]\n\n"
-        "Distribute credentials to each LXC:\n"
+        "Distribute to each LXC:\n"
         f"  vaultctl init\n\n"
-        "Or to generate a new Secret ID later:\n"
+        "When prompted, enter:\n"
+        f"  KV Mount: {kv_mount}\n"
+        f"  KV Path:  {kv_path}\n\n"
+        "Or to generate a new Secret ID:\n"
         f"  vaultctl admin setup vault -g",
         title="✓ Complete",
     ))

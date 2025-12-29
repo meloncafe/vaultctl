@@ -99,11 +99,6 @@ def _get_authenticated_client() -> VaultClient:
     raise typer.Exit(1)
 
 
-def _get_secret_path(name: str) -> str:
-    """Get KV secret path / 시크릿 경로 생성."""
-    return f"{settings.kv_lxc_path}/{name}"
-
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # Main Commands (for regular users)
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -119,19 +114,19 @@ def main(
     \b
     Quick Start:
         vaultctl init              # Initial setup (one-time)
-        vaultctl env lxc-000       # Generate .env file
+        vaultctl env 100           # Generate .env file
         docker compose up -d       # Run
     
     \b
     Advanced:
-        vaultctl run lxc-000 -- node app.js   # Run with injected env vars
-        vaultctl watch lxc-000 -- docker compose up  # Auto-restart
-        eval "$(vaultctl sh lxc-000)"         # Load shell env vars
+        vaultctl run 100 -- node app.js       # Run with injected env vars
+        vaultctl watch 100 -- docker compose up  # Auto-restart
+        eval "$(vaultctl sh 100)"             # Load shell env vars
     
     \b
     Administrator:
         vaultctl admin list        # List secrets
-        vaultctl admin put lxc-000 DB_HOST=localhost
+        vaultctl admin put 100 DB_HOST=localhost
         vaultctl admin setup vault # Initial Vault setup
     """
     if version:
@@ -209,7 +204,23 @@ def init_command():
         
         console.print("[green]✓[/green] Connection successful")
     
-    # 2. AppRole credentials
+    # 2. KV path settings
+    console.print("\n[bold]KV Secret Path[/bold]")
+    console.print("[dim]Get these values from your administrator.[/dim]")
+    
+    current_kv_mount = settings.kv_mount if settings.kv_mount != "kv" else None
+    current_kv_path = settings.kv_path if settings.kv_path != "proxmox/lxc" else None
+    
+    kv_mount = Prompt.ask(
+        "KV engine mount",
+        default=current_kv_mount or "kv",
+    )
+    kv_path = Prompt.ask(
+        "Secret path (e.g., proxmox/lxc)",
+        default=current_kv_path or "proxmox/lxc",
+    )
+    
+    # 3. AppRole credentials
     console.print("\n[bold]AppRole Authentication[/bold]")
     console.print("[dim]Get Role ID and Secret ID from your administrator.[/dim]")
     
@@ -220,7 +231,7 @@ def init_command():
         console.print("[red]✗[/red] Both Role ID and Secret ID are required.")
         raise typer.Exit(1)
     
-    # 3. Test AppRole login
+    # 4. Test AppRole login
     console.print("\n[dim]Testing authentication...[/dim]")
     try:
         result = client.approle_login(role_id, secret_id, settings.approle_mount)
@@ -241,16 +252,29 @@ def init_command():
         console.print(f"[red]✗[/red] Authentication failed: {e.message}")
         raise typer.Exit(1)
     
-    # 4. Save configuration
+    # 5. Test secret access
+    console.print("\n[dim]Testing secret access...[/dim]")
+    test_client = VaultClient(addr=vault_addr, token=token)
+    try:
+        test_client.kv_list(kv_mount, kv_path)
+        console.print(f"[green]✓[/green] Access to {kv_mount}/{kv_path}/ confirmed")
+    except VaultError as e:
+        console.print(f"[yellow]![/yellow] Warning: Cannot access {kv_mount}/{kv_path}/")
+        console.print(f"  {e.message}")
+        console.print("  Check your policy configuration.")
+    
+    # 6. Save configuration
     console.print("\n[dim]Saving configuration...[/dim]")
     
     try:
         settings.ensure_dirs()
         
-        # Save config (vault addr, role_id, secret_id)
+        # Save config
         config_file = settings.config_dir / "config"
         config_file.write_text(f"""# vaultctl configuration
 VAULT_ADDR={vault_addr}
+VAULT_KV_MOUNT={kv_mount}
+VAULT_KV_PATH={kv_path}
 VAULT_ROLE_ID={role_id}
 VAULT_SECRET_ID={secret_id}
 """)
@@ -266,12 +290,13 @@ VAULT_SECRET_ID={secret_id}
         console.print(f"[yellow]![/yellow] Failed to save configuration: {e}")
         console.print("  Token is only kept in memory.")
     
-    # 5. Done
+    # 7. Done
     console.print("\n")
     console.print(Panel.fit(
         "[bold green]Setup Complete![/bold green]\n\n"
+        f"KV Path: {kv_mount}/{kv_path}/\n\n"
         "You can now use these commands:\n"
-        "  vaultctl env <lxc-name>    # Generate .env file\n"
+        "  vaultctl env <name>        # Generate .env file\n"
         "  vaultctl status            # Check status\n"
         "  vaultctl run <n> -- cmd    # Run with injected env vars",
         title="✓ Complete",
@@ -280,7 +305,7 @@ VAULT_SECRET_ID={secret_id}
 
 @app.command("env")
 def env_command(
-    name: str = typer.Argument(..., help="Secret name (e.g., lxc-000) / 시크릿 이름"),
+    name: str = typer.Argument(..., help="Secret name (e.g., 100) / 시크릿 이름"),
     output: Path = typer.Option(Path(".env"), "--output", "-o", help="Output file / 출력 파일"),
     stdout: bool = typer.Option(False, "--stdout", help="Output to stdout / stdout으로 출력"),
 ):
@@ -288,21 +313,22 @@ def env_command(
     
     \b
     Examples:
-        vaultctl env lxc-000              # Generate .env file
-        vaultctl env lxc-000 -o prod.env  # Custom filename
-        vaultctl env lxc-000 --stdout     # Output to stdout
+        vaultctl env 100                  # Generate .env file
+        vaultctl env 100 -o prod.env      # Custom filename
+        vaultctl env 100 --stdout         # Output to stdout
         
         # Use with docker compose
-        vaultctl env lxc-000 && docker compose up -d
+        vaultctl env 100 && docker compose up -d
     """
     client = _get_authenticated_client()
+    secret_path = settings.get_secret_path(name)
     
     try:
-        data = client.kv_get(settings.kv_mount, _get_secret_path(name))
+        data = client.kv_get(settings.kv_mount, secret_path)
     except VaultError as e:
         if e.status_code == 404:
             console.print(f"[red]✗[/red] Secret not found: {name}")
-            console.print(f"  Path: {settings.kv_mount}/{_get_secret_path(name)}")
+            console.print(f"  Path: {settings.kv_mount}/{secret_path}")
             console.print("\n  Ask your administrator to create the secret:")
             console.print(f"    vaultctl admin put {name} KEY=value ...")
         else:
@@ -334,7 +360,8 @@ def status_command():
     # 1. Config
     console.print("1. Configuration")
     console.print(f"   Vault: {settings.vault_addr}")
-    console.print(f"   KV Path: {settings.kv_mount}/{settings.kv_lxc_path}/")
+    console.print(f"   KV Mount: {settings.kv_mount}")
+    console.print(f"   KV Path: {settings.kv_path}/")
     
     if settings.config_dir.exists():
         console.print(f"   Config Dir: [green]✓[/green] {settings.config_dir}")
@@ -381,8 +408,8 @@ def status_command():
     # 4. Secrets access test
     console.print("\n4. Secrets Access")
     try:
-        items = client.kv_list(settings.kv_mount, settings.kv_lxc_path)
-        console.print(f"   [green]✓[/green] Access granted ({len(items) if items else 0} secrets)")
+        items = client.kv_list(settings.kv_mount, settings.kv_path)
+        console.print(f"   [green]✓[/green] Access to {settings.kv_mount}/{settings.kv_path}/ ({len(items) if items else 0} secrets)")
     except VaultError as e:
         console.print(f"   [yellow]![/yellow] {e.message}")
     
@@ -404,7 +431,8 @@ def config_command():
     configs = [
         ("Vault Address", settings.vault_addr),
         ("KV Mount", settings.kv_mount),
-        ("Secret Path", settings.kv_lxc_path),
+        ("KV Path", settings.kv_path),
+        ("Full Path", f"{settings.kv_mount}/data/{settings.kv_path}/<name>"),
         ("AppRole Role ID", settings.approle_role_id[:8] + "..." if settings.approle_role_id else "-"),
         ("Config Directory", str(settings.config_dir)),
         ("Cache Directory", str(settings.cache_dir)),

@@ -16,6 +16,7 @@ A CLI tool for centrally managing secrets in Proxmox LXC containers with HashiCo
   - [User Commands](#user-commands)
   - [Admin Commands](#admin-commands)
 - [Extended Commands](#extended-commands-teller-style)
+- [Configuration](#configuration)
 - [APT Server Setup](#apt-server-setup)
 - [Package Build and Deployment](#package-build-and-deployment)
 - [Security Notes](#security-notes)
@@ -43,29 +44,41 @@ A CLI tool for centrally managing secrets in Proxmox LXC containers with HashiCo
 │                      Admin Workstation                       │
 ├─────────────────────────────────────────────────────────────┤
 │  vaultctl admin setup vault    # Create Policy, AppRole     │
-│  vaultctl admin put lxc-000 DB_HOST=... DB_PASSWORD=...     │
+│  vaultctl admin put 100 DB_HOST=... DB_PASSWORD=...         │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                    HashiCorp Vault                           │
 ├─────────────────────────────────────────────────────────────┤
-│  proxmox/lxc/                                                │
-│  ├── lxc-000  { DB_HOST, DB_PASSWORD, REDIS_URL, ... }      │
-│  ├── lxc-162  { API_KEY, SECRET_KEY, ... }                  │
-│  └── lxc-163  { ... }                                        │
+│  kv/data/proxmox/lxc/                                        │
+│  ├── 100  { DB_HOST, DB_PASSWORD, REDIS_URL, ... }          │
+│  ├── 101  { API_KEY, SECRET_KEY, ... }                      │
+│  └── 102  { ... }                                            │
 └─────────────────────────────────────────────────────────────┘
                               │
               ┌───────────────┼───────────────┐
               ▼               ▼               ▼
 ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
-│   LXC 161       │ │   LXC 162       │ │   LXC 163       │
+│   LXC 100       │ │   LXC 101       │ │   LXC 102       │
 │   (n8n)         │ │   (gitea)       │ │   (postgres)    │
 ├─────────────────┤ ├─────────────────┤ ├─────────────────┤
 │ vaultctl init   │ │ vaultctl init   │ │ vaultctl init   │
-│ vaultctl env    │ │ vaultctl env    │ │ vaultctl env    │
-│   lxc-000       │ │   lxc-162       │ │   lxc-163       │
+│ vaultctl env 100│ │ vaultctl env 101│ │ vaultctl env 102│
 └─────────────────┘ └─────────────────┘ └─────────────────┘
+```
+
+### KV Path Structure
+
+```
+{kv_mount}/data/{kv_path}/{name}
+
+Example:
+  kv_mount = "kv"
+  kv_path  = "proxmox/lxc"
+  name     = "100"
+  
+  Full path: kv/data/proxmox/lxc/100
 ```
 
 ---
@@ -111,14 +124,20 @@ vaultctl admin setup vault
 ```
 
 This creates:
-- Policy: `vaultctl` (read/write to proxmox/*)
+- Policy: `vaultctl` (read/write to kv/<path>/*)
 - AppRole: `vaultctl` with Role ID and Secret ID
+
+You will be prompted for:
+- Vault server address
+- Root/Admin token
+- KV engine mount (default: `kv`)
+- Secret base path (default: `proxmox/lxc`)
 
 #### 2. Register Secrets
 
 ```bash
-# Add secrets for LXC 161
-vaultctl admin put lxc-000 \
+# Add secrets for LXC 100
+vaultctl admin put 100 \
   DB_HOST=postgres.internal \
   DB_PASSWORD=supersecret \
   REDIS_URL=redis://redis.internal:6379
@@ -127,7 +146,7 @@ vaultctl admin put lxc-000 \
 vaultctl admin list
 
 # View specific secret
-vaultctl admin get lxc-000
+vaultctl admin get 100
 ```
 
 ### For Users (in each LXC)
@@ -140,6 +159,8 @@ vaultctl init
 
 Interactive prompts for:
 - Vault server address
+- KV engine mount (e.g., `kv`)
+- Secret path (e.g., `proxmox/lxc`)
 - Role ID (from administrator)
 - Secret ID (from administrator)
 
@@ -151,7 +172,7 @@ Configuration saved to `~/.config/vaultctl/config`
 cd /opt/myapp
 
 # Generate .env file
-vaultctl env lxc-000
+vaultctl env 100
 
 # Run with Docker Compose
 docker compose up -d
@@ -160,7 +181,7 @@ docker compose up -d
 Or use `vaultctl run` for direct injection:
 
 ```bash
-vaultctl run lxc-000 -- docker compose up -d
+vaultctl run 100 -- docker compose up -d
 ```
 
 ---
@@ -200,6 +221,10 @@ $ vaultctl init
 Vault server address: https://vault.example.com
 ✓ Connection successful
 
+KV Secret Path
+KV engine mount [kv]: kv
+Secret path [proxmox/lxc]: proxmox/lxc
+
 AppRole Authentication
 Role ID: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 Secret ID: ********
@@ -215,13 +240,13 @@ Secret ID: ********
 
 ```bash
 # Generate .env in current directory
-vaultctl env lxc-000
+vaultctl env 100
 
 # Custom output path
-vaultctl env lxc-000 -o /opt/myapp/.env
+vaultctl env 100 -o /opt/myapp/.env
 
 # Output to stdout
-vaultctl env lxc-000 --stdout
+vaultctl env 100 --stdout
 ```
 
 #### vaultctl status
@@ -233,6 +258,7 @@ vaultctl Status
 
 1. Configuration
    Vault: https://vault.example.com
+   KV Mount: kv
    KV Path: proxmox/lxc/
    Config Dir: ✓ ~/.config/vaultctl
 
@@ -245,7 +271,7 @@ vaultctl Status
    TTL: 58 minutes
 
 4. Secrets Access
-   ✓ Access granted (5 secrets)
+   ✓ Access to kv/proxmox/lxc/ (5 secrets)
 
 ✓ All checks passed
 ```
@@ -279,19 +305,19 @@ vaultctl admin list
 vaultctl admin list -v  # verbose
 
 # Get specific secret
-vaultctl admin get lxc-000
-vaultctl admin get lxc-000 -f DB_PASSWORD       # specific field
-vaultctl admin get lxc-000 -f DB_PASSWORD -c    # copy to clipboard
-vaultctl admin get lxc-000 --raw                # JSON output
+vaultctl admin get 100
+vaultctl admin get 100 -f DB_PASSWORD       # specific field
+vaultctl admin get 100 -f DB_PASSWORD -c    # copy to clipboard
+vaultctl admin get 100 --raw                # JSON output
 
 # Store secrets
-vaultctl admin put lxc-000 DB_HOST=localhost DB_PASSWORD=secret
-vaultctl admin put lxc-000 NEW_KEY=value --merge    # merge with existing
-vaultctl admin put lxc-000 ONLY_THIS=value --replace  # replace all
+vaultctl admin put 100 DB_HOST=localhost DB_PASSWORD=secret
+vaultctl admin put 100 NEW_KEY=value --merge    # merge with existing
+vaultctl admin put 100 ONLY_THIS=value --replace  # replace all
 
 # Delete
-vaultctl admin delete lxc-000
-vaultctl admin delete lxc-000 --force  # no confirmation
+vaultctl admin delete 100
+vaultctl admin delete 100 --force  # no confirmation
 ```
 
 #### Bulk Operations
@@ -308,11 +334,11 @@ vaultctl admin import secrets.json --dry-run  # validate only
 JSON format:
 ```json
 {
-  "lxc-000": {
+  "100": {
     "DB_HOST": "postgres.internal",
     "DB_PASSWORD": "secret123"
   },
-  "lxc-162": {
+  "101": {
     "API_KEY": "xxxx",
     "SECRET_KEY": "yyyy"
   }
@@ -324,22 +350,30 @@ JSON format:
 ```bash
 $ vaultctl admin setup vault
 
+Vault server address: https://vault.example.com
+Root/Admin token: ********
+
+Testing connection...
+✓ Connected
+
+KV Path Configuration
+KV engine mount [kv]: kv
+Secret base path [proxmox/lxc]: proxmox/lxc
+
 🔐 Vault Setup
 ╭──────────────────────────────────────╮
 │ This will create:                    │
 │ • Policy: vaultctl                   │
-│ • AppRole: vaultctl-role             │
-│ • KV secrets engine: proxmox/        │
+│ • AppRole: vaultctl                  │
+│ • Access: kv/data/proxmox/*          │
 ╰──────────────────────────────────────╯
 
-Vault server address [https://vault.example.com]: 
-Root/Admin token: ********
-
 1. KV Secrets Engine
-   ✓ Enabled: proxmox/
+   ✓ Exists: kv/
 
 2. Policy
    ✓ Created: vaultctl
+   Access: kv/data/proxmox/*
 
 3. AppRole Auth
    ✓ Enabled: approle/
@@ -353,6 +387,9 @@ Save these credentials securely!
 ────────────────────────────────────────
   Role ID:    xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
   Secret ID:  yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy
+
+  KV Mount:   kv
+  KV Path:    proxmox/lxc
 ────────────────────────────────────────
 ```
 
@@ -368,14 +405,14 @@ Run processes with Vault environment variables injected.
 
 ```bash
 # Run with injected env vars
-vaultctl run lxc-000 -- node index.js
-vaultctl run lxc-000 -- docker compose up -d
+vaultctl run 100 -- node index.js
+vaultctl run 100 -- docker compose up -d
 
 # Run shell command
-vaultctl run lxc-000 --shell -- 'echo $DB_PASSWORD | base64'
+vaultctl run 100 --shell -- 'echo $DB_PASSWORD | base64'
 
 # Reset existing env vars (isolated execution)
-vaultctl run lxc-000 --reset -- python app.py
+vaultctl run 100 --reset -- python app.py
 ```
 
 ### vaultctl sh
@@ -384,13 +421,13 @@ Generate shell export statements for direct sourcing.
 
 ```bash
 # Load env vars in current shell
-eval "$(vaultctl sh lxc-000)"
+eval "$(vaultctl sh 100)"
 
 # Add to .bashrc/.zshrc
-echo 'eval "$(vaultctl sh lxc-000)"' >> ~/.bashrc
+echo 'eval "$(vaultctl sh 100)"' >> ~/.bashrc
 
 # Fish shell
-vaultctl sh lxc-000 --format fish | source
+vaultctl sh 100 --format fish | source
 ```
 
 ### vaultctl scan
@@ -411,7 +448,7 @@ vaultctl scan --error-if-found
 vaultctl scan --json
 
 # Scan specific secret only
-vaultctl scan --name lxc-000
+vaultctl scan --name 100
 ```
 
 ### vaultctl redact
@@ -438,13 +475,13 @@ Auto-restart processes when Vault secrets change.
 
 ```bash
 # Watch and restart on change
-vaultctl watch lxc-000 -- docker compose up -d
+vaultctl watch 100 -- docker compose up -d
 
 # Custom check interval (default 60s)
-vaultctl watch lxc-000 --interval 300 -- docker compose up -d
+vaultctl watch 100 --interval 300 -- docker compose up -d
 
 # Send SIGHUP instead of restart
-vaultctl watch lxc-000 --on-change reload -- ./app
+vaultctl watch 100 --on-change reload -- ./app
 ```
 
 Register as systemd service:
@@ -457,7 +494,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/vaultctl watch lxc-000 -- docker compose -f /opt/myapp/docker-compose.yml up
+ExecStart=/usr/bin/vaultctl watch 100 -- docker compose -f /opt/myapp/docker-compose.yml up
 Restart=always
 WorkingDirectory=/opt/myapp
 
@@ -482,6 +519,8 @@ WantedBy=multi-user.target
 ```bash
 # ~/.config/vaultctl/config
 VAULT_ADDR=https://vault.example.com
+VAULT_KV_MOUNT=kv
+VAULT_KV_PATH=proxmox/lxc
 VAULT_ROLE_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 VAULT_SECRET_ID=yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy
 ```
@@ -494,8 +533,16 @@ VAULT_SECRET_ID=yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy
 | `VAULTCTL_VAULT_TOKEN` | - | Vault token (optional) |
 | `VAULTCTL_APPROLE_ROLE_ID` | - | AppRole Role ID |
 | `VAULTCTL_APPROLE_SECRET_ID` | - | AppRole Secret ID |
-| `VAULTCTL_KV_MOUNT` | `proxmox` | KV engine mount path |
-| `VAULTCTL_KV_LXC_PATH` | `lxc` | Secrets path |
+| `VAULTCTL_KV_MOUNT` | `kv` | KV engine mount path |
+| `VAULTCTL_KV_PATH` | `proxmox/lxc` | Secret base path |
+
+### KV Path Examples
+
+| Use Case | kv_mount | kv_path | Full Path |
+|----------|----------|---------|-----------|
+| Proxmox LXC | `kv` | `proxmox/lxc` | `kv/data/proxmox/lxc/100` |
+| Docker Swarm | `secrets` | `docker/swarm` | `secrets/data/docker/swarm/myapp` |
+| Kubernetes | `kv` | `k8s/prod` | `kv/data/k8s/prod/deployment` |
 
 ---
 
@@ -597,6 +644,20 @@ vaultctl status
 vaultctl init
 ```
 
+### Permission Denied
+
+Check your policy configuration:
+
+```bash
+# View current config
+vaultctl config
+
+# Verify the policy allows access to the path
+# Policy should include:
+#   path "kv/data/proxmox/*" { capabilities = [...] }
+#   path "kv/metadata/proxmox/*" { capabilities = [...] }
+```
+
 ### Connection Issues
 
 ```bash
@@ -635,6 +696,22 @@ vaultctl init
 | `vaultctl docker env <n>` | `vaultctl env <n>` |
 | `vaultctl token renew` | `vaultctl admin token renew` |
 | `vaultctl repo add` | `vaultctl admin repo add` |
+
+### Configuration Changes
+
+Old config format:
+```bash
+VAULT_ADDR=...
+VAULT_KV_MOUNT=proxmox    # Was used as mount
+VAULT_KV_PATH=lxc         # Was the sub-path
+```
+
+New config format:
+```bash
+VAULT_ADDR=...
+VAULT_KV_MOUNT=kv         # KV engine mount
+VAULT_KV_PATH=proxmox/lxc # Full path within KV
+```
 
 ---
 

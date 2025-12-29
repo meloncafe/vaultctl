@@ -1,4 +1,5 @@
-"""vaultctl 설정 관리.
+"""vaultctl configuration management.
+vaultctl 설정 관리.
 
 Configuration priority (highest to lowest):
 1. Environment variables (VAULTCTL_*, VAULT_*)
@@ -63,6 +64,8 @@ def _load_all_configs() -> dict[str, str]:
     - VAULT_TOKEN -> vault_token
     - VAULT_ROLE_ID -> approle_role_id
     - VAULT_SECRET_ID -> approle_secret_id
+    - VAULT_KV_MOUNT -> kv_mount
+    - VAULT_KV_PATH -> kv_path
     """
     mapping = {
         "VAULT_ADDR": "vault_addr",
@@ -71,7 +74,7 @@ def _load_all_configs() -> dict[str, str]:
         "VAULT_ROLE_ID": "approle_role_id",
         "VAULT_SECRET_ID": "approle_secret_id",
         "VAULT_KV_MOUNT": "kv_mount",
-        "VAULT_KV_PATH": "kv_lxc_path",
+        "VAULT_KV_PATH": "kv_path",
     }
     
     result = {}
@@ -105,7 +108,7 @@ class ConfigFileSource(PydanticBaseSettingsSource):
 
 
 class Settings(BaseSettings):
-    """애플리케이션 설정."""
+    """Application settings / 애플리케이션 설정."""
 
     model_config = SettingsConfigDict(
         env_prefix="VAULTCTL_",
@@ -114,25 +117,25 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # Vault 설정
+    # Vault connection
     vault_addr: str = Field(
         default="https://vault.example.com",
-        description="Vault 서버 주소",
+        description="Vault server address",
     )
     vault_token: Optional[str] = Field(
         default=None,
-        description="Vault 토큰",
+        description="Vault token",
     )
     vault_namespace: Optional[str] = Field(
         default=None,
-        description="Vault 네임스페이스 (Enterprise)",
+        description="Vault namespace (Enterprise)",
     )
     vault_skip_verify: bool = Field(
         default=False,
-        description="TLS 인증서 검증 스킵",
+        description="Skip TLS certificate verification",
     )
 
-    # AppRole 설정
+    # AppRole authentication
     approle_role_id: Optional[str] = Field(
         default=None,
         description="AppRole Role ID",
@@ -143,56 +146,69 @@ class Settings(BaseSettings):
     )
     approle_mount: str = Field(
         default="approle",
-        description="AppRole 인증 마운트 경로",
+        description="AppRole auth mount path",
     )
 
-    # KV 경로 설정
+    # KV path settings
+    # Full path: {kv_mount}/data/{kv_path}/{name}
+    # Example: kv/data/proxmox/lxc/161
     kv_mount: str = Field(
-        default="proxmox",
-        description="KV secrets engine 마운트 경로",
+        default="kv",
+        description="KV secrets engine mount path (e.g., kv)",
     )
-    kv_lxc_path: str = Field(
-        default="lxc",
-        description="시크릿 저장 경로 (proxmox/lxc/...)",
+    kv_path: str = Field(
+        default="proxmox/lxc",
+        description="Secret base path within KV (e.g., proxmox/lxc)",
     )
 
-    # 토큰 갱신 설정
+    # Token renewal settings
     token_renew_threshold: int = Field(
         default=3600,
-        description="토큰 갱신 임계값 (초). TTL이 이 값 이하면 갱신",
+        description="Token renewal threshold in seconds. Renew if TTL is below this.",
     )
 
     @property
     def config_dir(self) -> Path:
-        """설정 디렉토리 경로 (~/.config/vaultctl)."""
+        """Config directory path (~/.config/vaultctl)."""
         config_home = os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")
         return Path(config_home) / "vaultctl"
 
     @property
     def cache_dir(self) -> Path:
-        """캐시 디렉토리 경로 (~/.cache/vaultctl)."""
+        """Cache directory path (~/.cache/vaultctl)."""
         cache_home = os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")
         return Path(cache_home) / "vaultctl"
 
     @property
     def token_cache_file(self) -> Path:
-        """토큰 캐시 파일 경로."""
+        """Token cache file path."""
         return self.cache_dir / "token"
 
     @property
     def user_config_file(self) -> Path:
-        """사용자 설정 파일 경로."""
+        """User config file path."""
         return self.config_dir / "config"
 
     def ensure_dirs(self) -> None:
-        """필요한 디렉토리 생성."""
+        """Create necessary directories."""
         self.config_dir.mkdir(parents=True, exist_ok=True)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.cache_dir.chmod(0o700)
 
     def has_approle_credentials(self) -> bool:
-        """AppRole 자격 증명이 있는지 확인."""
+        """Check if AppRole credentials are available."""
         return bool(self.approle_role_id and self.approle_secret_id)
+
+    def get_secret_path(self, name: str) -> str:
+        """Get full secret path for a name.
+        
+        Args:
+            name: Secret name (e.g., 161, lxc-161)
+            
+        Returns:
+            Full path (e.g., proxmox/lxc/161)
+        """
+        return f"{self.kv_path}/{name}"
 
     @classmethod
     def settings_customise_sources(
@@ -221,5 +237,5 @@ class Settings(BaseSettings):
         )
 
 
-# 전역 설정 인스턴스
+# Global settings instance
 settings = Settings()
