@@ -107,7 +107,7 @@ def _list_secrets() -> list[str]:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def run_command(
-    name: str = typer.Argument(..., help="Secret name (e.g., lxc-161) / 시크릿 이름"),
+    name: str = typer.Argument(..., help="Secret name (e.g., lxc-000) / 시크릿 이름"),
     command: List[str] = typer.Argument(..., help="Command to run / 실행할 명령어"),
     reset: bool = typer.Option(False, "--reset", "-r", help="Reset existing env vars / 기존 환경변수 초기화"),
     shell: bool = typer.Option(False, "--shell", "-s", help="Run through shell / 셸을 통해 실행"),
@@ -117,9 +117,9 @@ def run_command(
     
     \b
     Examples:
-        vaultctl run lxc-161 -- node index.js
-        vaultctl run lxc-161 --shell -- "echo $DB_PASSWORD"
-        vaultctl run lxc-161 -- docker compose up -d
+        vaultctl run lxc-000 -- node index.js
+        vaultctl run lxc-000 --shell -- "echo $DB_PASSWORD"
+        vaultctl run lxc-000 -- docker compose up -d
     """
     secrets = _get_secrets(name)
     
@@ -155,7 +155,7 @@ def run_command(
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def shell_export(
-    name: str = typer.Argument(..., help="Secret name (e.g., lxc-161) / 시크릿 이름"),
+    name: str = typer.Argument(..., help="Secret name (e.g., lxc-000) / 시크릿 이름"),
     _format: str = typer.Option("bash", "--format", "-f", help="Output format: bash, fish, zsh / 출력 형식"),
 ):
     """Generate shell export statements for eval.
@@ -163,10 +163,10 @@ def shell_export(
     
     \b
     Examples:
-        eval "$(vaultctl sh lxc-161)"
+        eval "$(vaultctl sh lxc-000)"
         
     Add to .bashrc/.zshrc:
-        eval "$(vaultctl sh lxc-161)"
+        eval "$(vaultctl sh lxc-000)"
     """
     secrets = _get_secrets(name)
     
@@ -204,7 +204,7 @@ def scan_secrets(
     \b
     Examples:
         vaultctl scan
-        vaultctl scan ./src --name lxc-161
+        vaultctl scan ./src --name lxc-000
         vaultctl scan --error-if-found  # For CI/CD
     """
     # Collect secrets
@@ -355,12 +355,12 @@ def watch_and_restart(
     
     \b
     Examples:
-        vaultctl watch lxc-161 -- docker compose up -d
-        vaultctl watch lxc-161 --interval 300 -- systemctl restart myapp
+        vaultctl watch lxc-000 -- docker compose up -d
+        vaultctl watch lxc-000 --interval 300 -- systemctl restart myapp
     
     Register as systemd service:
         [Service]
-        ExecStart=/usr/bin/vaultctl watch lxc-161 -- docker compose up
+        ExecStart=/usr/bin/vaultctl watch lxc-000 -- docker compose up
         Restart=always
     """
     def get_secrets_hash():

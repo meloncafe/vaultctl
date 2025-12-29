@@ -43,7 +43,7 @@ A CLI tool for centrally managing secrets in Proxmox LXC containers with HashiCo
 │                      Admin Workstation                       │
 ├─────────────────────────────────────────────────────────────┤
 │  vaultctl admin setup vault    # Create Policy, AppRole     │
-│  vaultctl admin put lxc-161 DB_HOST=... DB_PASSWORD=...     │
+│  vaultctl admin put lxc-000 DB_HOST=... DB_PASSWORD=...     │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -51,7 +51,7 @@ A CLI tool for centrally managing secrets in Proxmox LXC containers with HashiCo
 │                    HashiCorp Vault                           │
 ├─────────────────────────────────────────────────────────────┤
 │  proxmox/lxc/                                                │
-│  ├── lxc-161  { DB_HOST, DB_PASSWORD, REDIS_URL, ... }      │
+│  ├── lxc-000  { DB_HOST, DB_PASSWORD, REDIS_URL, ... }      │
 │  ├── lxc-162  { API_KEY, SECRET_KEY, ... }                  │
 │  └── lxc-163  { ... }                                        │
 └─────────────────────────────────────────────────────────────┘
@@ -64,7 +64,7 @@ A CLI tool for centrally managing secrets in Proxmox LXC containers with HashiCo
 ├─────────────────┤ ├─────────────────┤ ├─────────────────┤
 │ vaultctl init   │ │ vaultctl init   │ │ vaultctl init   │
 │ vaultctl env    │ │ vaultctl env    │ │ vaultctl env    │
-│   lxc-161       │ │   lxc-162       │ │   lxc-163       │
+│   lxc-000       │ │   lxc-162       │ │   lxc-163       │
 └─────────────────┘ └─────────────────┘ └─────────────────┘
 ```
 
@@ -118,7 +118,7 @@ This creates:
 
 ```bash
 # Add secrets for LXC 161
-vaultctl admin put lxc-161 \
+vaultctl admin put lxc-000 \
   DB_HOST=postgres.internal \
   DB_PASSWORD=supersecret \
   REDIS_URL=redis://redis.internal:6379
@@ -127,7 +127,7 @@ vaultctl admin put lxc-161 \
 vaultctl admin list
 
 # View specific secret
-vaultctl admin get lxc-161
+vaultctl admin get lxc-000
 ```
 
 ### For Users (in each LXC)
@@ -151,7 +151,7 @@ Configuration saved to `~/.config/vaultctl/config`
 cd /opt/myapp
 
 # Generate .env file
-vaultctl env lxc-161
+vaultctl env lxc-000
 
 # Run with Docker Compose
 docker compose up -d
@@ -160,7 +160,7 @@ docker compose up -d
 Or use `vaultctl run` for direct injection:
 
 ```bash
-vaultctl run lxc-161 -- docker compose up -d
+vaultctl run lxc-000 -- docker compose up -d
 ```
 
 ---
@@ -215,13 +215,13 @@ Secret ID: ********
 
 ```bash
 # Generate .env in current directory
-vaultctl env lxc-161
+vaultctl env lxc-000
 
 # Custom output path
-vaultctl env lxc-161 -o /opt/myapp/.env
+vaultctl env lxc-000 -o /opt/myapp/.env
 
 # Output to stdout
-vaultctl env lxc-161 --stdout
+vaultctl env lxc-000 --stdout
 ```
 
 #### vaultctl status
@@ -279,19 +279,19 @@ vaultctl admin list
 vaultctl admin list -v  # verbose
 
 # Get specific secret
-vaultctl admin get lxc-161
-vaultctl admin get lxc-161 -f DB_PASSWORD       # specific field
-vaultctl admin get lxc-161 -f DB_PASSWORD -c    # copy to clipboard
-vaultctl admin get lxc-161 --raw                # JSON output
+vaultctl admin get lxc-000
+vaultctl admin get lxc-000 -f DB_PASSWORD       # specific field
+vaultctl admin get lxc-000 -f DB_PASSWORD -c    # copy to clipboard
+vaultctl admin get lxc-000 --raw                # JSON output
 
 # Store secrets
-vaultctl admin put lxc-161 DB_HOST=localhost DB_PASSWORD=secret
-vaultctl admin put lxc-161 NEW_KEY=value --merge    # merge with existing
-vaultctl admin put lxc-161 ONLY_THIS=value --replace  # replace all
+vaultctl admin put lxc-000 DB_HOST=localhost DB_PASSWORD=secret
+vaultctl admin put lxc-000 NEW_KEY=value --merge    # merge with existing
+vaultctl admin put lxc-000 ONLY_THIS=value --replace  # replace all
 
 # Delete
-vaultctl admin delete lxc-161
-vaultctl admin delete lxc-161 --force  # no confirmation
+vaultctl admin delete lxc-000
+vaultctl admin delete lxc-000 --force  # no confirmation
 ```
 
 #### Bulk Operations
@@ -308,7 +308,7 @@ vaultctl admin import secrets.json --dry-run  # validate only
 JSON format:
 ```json
 {
-  "lxc-161": {
+  "lxc-000": {
     "DB_HOST": "postgres.internal",
     "DB_PASSWORD": "secret123"
   },
@@ -368,14 +368,14 @@ Run processes with Vault environment variables injected.
 
 ```bash
 # Run with injected env vars
-vaultctl run lxc-161 -- node index.js
-vaultctl run lxc-161 -- docker compose up -d
+vaultctl run lxc-000 -- node index.js
+vaultctl run lxc-000 -- docker compose up -d
 
 # Run shell command
-vaultctl run lxc-161 --shell -- 'echo $DB_PASSWORD | base64'
+vaultctl run lxc-000 --shell -- 'echo $DB_PASSWORD | base64'
 
 # Reset existing env vars (isolated execution)
-vaultctl run lxc-161 --reset -- python app.py
+vaultctl run lxc-000 --reset -- python app.py
 ```
 
 ### vaultctl sh
@@ -384,13 +384,13 @@ Generate shell export statements for direct sourcing.
 
 ```bash
 # Load env vars in current shell
-eval "$(vaultctl sh lxc-161)"
+eval "$(vaultctl sh lxc-000)"
 
 # Add to .bashrc/.zshrc
-echo 'eval "$(vaultctl sh lxc-161)"' >> ~/.bashrc
+echo 'eval "$(vaultctl sh lxc-000)"' >> ~/.bashrc
 
 # Fish shell
-vaultctl sh lxc-161 --format fish | source
+vaultctl sh lxc-000 --format fish | source
 ```
 
 ### vaultctl scan
@@ -411,7 +411,7 @@ vaultctl scan --error-if-found
 vaultctl scan --json
 
 # Scan specific secret only
-vaultctl scan --name lxc-161
+vaultctl scan --name lxc-000
 ```
 
 ### vaultctl redact
@@ -438,13 +438,13 @@ Auto-restart processes when Vault secrets change.
 
 ```bash
 # Watch and restart on change
-vaultctl watch lxc-161 -- docker compose up -d
+vaultctl watch lxc-000 -- docker compose up -d
 
 # Custom check interval (default 60s)
-vaultctl watch lxc-161 --interval 300 -- docker compose up -d
+vaultctl watch lxc-000 --interval 300 -- docker compose up -d
 
 # Send SIGHUP instead of restart
-vaultctl watch lxc-161 --on-change reload -- ./app
+vaultctl watch lxc-000 --on-change reload -- ./app
 ```
 
 Register as systemd service:
@@ -457,7 +457,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/vaultctl watch lxc-161 -- docker compose -f /opt/myapp/docker-compose.yml up
+ExecStart=/usr/bin/vaultctl watch lxc-000 -- docker compose -f /opt/myapp/docker-compose.yml up
 Restart=always
 WorkingDirectory=/opt/myapp
 

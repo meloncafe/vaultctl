@@ -43,7 +43,7 @@ Proxmox LXC 컨테이너의 시크릿을 HashiCorp Vault로 중앙 관리하는 
 │                      관리자 워크스테이션                      │
 ├─────────────────────────────────────────────────────────────┤
 │  vaultctl admin setup vault    # Policy, AppRole 생성       │
-│  vaultctl admin put lxc-161 DB_HOST=... DB_PASSWORD=...     │
+│  vaultctl admin put lxc-000 DB_HOST=... DB_PASSWORD=...     │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -51,7 +51,7 @@ Proxmox LXC 컨테이너의 시크릿을 HashiCorp Vault로 중앙 관리하는 
 │                    HashiCorp Vault                           │
 ├─────────────────────────────────────────────────────────────┤
 │  proxmox/lxc/                                                │
-│  ├── lxc-161  { DB_HOST, DB_PASSWORD, REDIS_URL, ... }      │
+│  ├── lxc-000  { DB_HOST, DB_PASSWORD, REDIS_URL, ... }      │
 │  ├── lxc-162  { API_KEY, SECRET_KEY, ... }                  │
 │  └── lxc-163  { ... }                                        │
 └─────────────────────────────────────────────────────────────┘
@@ -64,7 +64,7 @@ Proxmox LXC 컨테이너의 시크릿을 HashiCorp Vault로 중앙 관리하는 
 ├─────────────────┤ ├─────────────────┤ ├─────────────────┤
 │ vaultctl init   │ │ vaultctl init   │ │ vaultctl init   │
 │ vaultctl env    │ │ vaultctl env    │ │ vaultctl env    │
-│   lxc-161       │ │   lxc-162       │ │   lxc-163       │
+│   lxc-000       │ │   lxc-162       │ │   lxc-163       │
 └─────────────────┘ └─────────────────┘ └─────────────────┘
 ```
 
@@ -118,7 +118,7 @@ vaultctl admin setup vault
 
 ```bash
 # LXC 161용 시크릿 추가
-vaultctl admin put lxc-161 \
+vaultctl admin put lxc-000 \
   DB_HOST=postgres.internal \
   DB_PASSWORD=supersecret \
   REDIS_URL=redis://redis.internal:6379
@@ -127,7 +127,7 @@ vaultctl admin put lxc-161 \
 vaultctl admin list
 
 # 특정 시크릿 조회
-vaultctl admin get lxc-161
+vaultctl admin get lxc-000
 ```
 
 ### 사용자 (각 LXC에서)
@@ -151,7 +151,7 @@ vaultctl init
 cd /opt/myapp
 
 # .env 파일 생성
-vaultctl env lxc-161
+vaultctl env lxc-000
 
 # Docker Compose 실행
 docker compose up -d
@@ -160,7 +160,7 @@ docker compose up -d
 또는 `vaultctl run`으로 직접 주입:
 
 ```bash
-vaultctl run lxc-161 -- docker compose up -d
+vaultctl run lxc-000 -- docker compose up -d
 ```
 
 ---
@@ -214,13 +214,13 @@ Secret ID: ********
 
 ```bash
 # 현재 디렉토리에 .env 생성
-vaultctl env lxc-161
+vaultctl env lxc-000
 
 # 다른 경로에 저장
-vaultctl env lxc-161 -o /opt/myapp/.env
+vaultctl env lxc-000 -o /opt/myapp/.env
 
 # stdout으로 출력
-vaultctl env lxc-161 --stdout
+vaultctl env lxc-000 --stdout
 ```
 
 #### vaultctl status
@@ -278,19 +278,19 @@ vaultctl admin list
 vaultctl admin list -v  # 상세
 
 # 특정 시크릿 조회
-vaultctl admin get lxc-161
-vaultctl admin get lxc-161 -f DB_PASSWORD       # 특정 필드만
-vaultctl admin get lxc-161 -f DB_PASSWORD -c    # 클립보드 복사
-vaultctl admin get lxc-161 --raw                # JSON 출력
+vaultctl admin get lxc-000
+vaultctl admin get lxc-000 -f DB_PASSWORD       # 특정 필드만
+vaultctl admin get lxc-000 -f DB_PASSWORD -c    # 클립보드 복사
+vaultctl admin get lxc-000 --raw                # JSON 출력
 
 # 시크릿 저장
-vaultctl admin put lxc-161 DB_HOST=localhost DB_PASSWORD=secret
-vaultctl admin put lxc-161 NEW_KEY=value --merge    # 기존 값과 병합
-vaultctl admin put lxc-161 ONLY_THIS=value --replace  # 전체 교체
+vaultctl admin put lxc-000 DB_HOST=localhost DB_PASSWORD=secret
+vaultctl admin put lxc-000 NEW_KEY=value --merge    # 기존 값과 병합
+vaultctl admin put lxc-000 ONLY_THIS=value --replace  # 전체 교체
 
 # 삭제
-vaultctl admin delete lxc-161
-vaultctl admin delete lxc-161 --force  # 확인 없이
+vaultctl admin delete lxc-000
+vaultctl admin delete lxc-000 --force  # 확인 없이
 ```
 
 #### 일괄 작업
@@ -307,7 +307,7 @@ vaultctl admin import secrets.json --dry-run  # 검증만
 JSON 형식:
 ```json
 {
-  "lxc-161": {
+  "lxc-000": {
     "DB_HOST": "postgres.internal",
     "DB_PASSWORD": "secret123"
   },
@@ -367,14 +367,14 @@ Vault 환경변수를 주입하며 프로세스를 실행합니다.
 
 ```bash
 # 환경변수 주입 실행
-vaultctl run lxc-161 -- node index.js
-vaultctl run lxc-161 -- docker compose up -d
+vaultctl run lxc-000 -- node index.js
+vaultctl run lxc-000 -- docker compose up -d
 
 # 셸 명령 실행
-vaultctl run lxc-161 --shell -- 'echo $DB_PASSWORD | base64'
+vaultctl run lxc-000 --shell -- 'echo $DB_PASSWORD | base64'
 
 # 기존 환경변수 초기화 (격리 실행)
-vaultctl run lxc-161 --reset -- python app.py
+vaultctl run lxc-000 --reset -- python app.py
 ```
 
 ### vaultctl sh
@@ -383,13 +383,13 @@ vaultctl run lxc-161 --reset -- python app.py
 
 ```bash
 # 현재 셸에 환경변수 로드
-eval "$(vaultctl sh lxc-161)"
+eval "$(vaultctl sh lxc-000)"
 
 # .bashrc/.zshrc에 추가
-echo 'eval "$(vaultctl sh lxc-161)"' >> ~/.bashrc
+echo 'eval "$(vaultctl sh lxc-000)"' >> ~/.bashrc
 
 # Fish 셸
-vaultctl sh lxc-161 --format fish | source
+vaultctl sh lxc-000 --format fish | source
 ```
 
 ### vaultctl scan
@@ -410,7 +410,7 @@ vaultctl scan --error-if-found
 vaultctl scan --json
 
 # 특정 시크릿만 검색
-vaultctl scan --name lxc-161
+vaultctl scan --name lxc-000
 ```
 
 ### vaultctl redact
@@ -437,13 +437,13 @@ Vault 비밀 변경 시 프로세스를 자동 재시작합니다.
 
 ```bash
 # 변경 감지 및 재시작
-vaultctl watch lxc-161 -- docker compose up -d
+vaultctl watch lxc-000 -- docker compose up -d
 
 # 체크 간격 설정 (기본 60초)
-vaultctl watch lxc-161 --interval 300 -- docker compose up -d
+vaultctl watch lxc-000 --interval 300 -- docker compose up -d
 
 # 재시작 대신 SIGHUP 전송
-vaultctl watch lxc-161 --on-change reload -- ./app
+vaultctl watch lxc-000 --on-change reload -- ./app
 ```
 
 systemd 서비스 등록:
@@ -456,7 +456,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/vaultctl watch lxc-161 -- docker compose -f /opt/myapp/docker-compose.yml up
+ExecStart=/usr/bin/vaultctl watch lxc-000 -- docker compose -f /opt/myapp/docker-compose.yml up
 Restart=always
 WorkingDirectory=/opt/myapp
 

@@ -156,7 +156,7 @@ def list_secrets(
 
 @app.command("get")
 def get_secret(
-    name: str = typer.Argument(..., help="Secret name (e.g., lxc-161) / 시크릿 이름"),
+    name: str = typer.Argument(..., help="Secret name (e.g., lxc-000) / 시크릿 이름"),
     field: Optional[str] = typer.Option(None, "--field", "-f", help="Specific field only / 특정 필드만 조회"),
     copy: bool = typer.Option(False, "--copy", "-c", help="Copy to clipboard / 클립보드에 복사"),
     raw: bool = typer.Option(False, "--raw", help="JSON output / JSON으로 출력"),
@@ -164,10 +164,10 @@ def get_secret(
     """Get secret / 시크릿 조회.
     
     Examples:
-        vaultctl admin get lxc-161
-        vaultctl admin get lxc-161 -f DB_PASSWORD
-        vaultctl admin get lxc-161 -f DB_PASSWORD --copy
-        vaultctl admin get lxc-161 --raw
+        vaultctl admin get lxc-000
+        vaultctl admin get lxc-000 -f DB_PASSWORD
+        vaultctl admin get lxc-000 -f DB_PASSWORD --copy
+        vaultctl admin get lxc-000 --raw
     """
     client = _get_authenticated_client()
     
@@ -215,23 +215,23 @@ def get_secret(
 
 @app.command("put")
 def put_secret(
-    name: str = typer.Argument(..., help="Secret name (e.g., lxc-161) / 시크릿 이름"),
+    name: str = typer.Argument(..., help="Secret name (e.g., lxc-000) / 시크릿 이름"),
     data: list[str] = typer.Argument(..., help="KEY=value pairs / KEY=value 쌍들"),
     merge: bool = typer.Option(True, "--merge/--replace", help="Merge with existing (default) / Replace all / 기존 값과 병합 또는 교체"),
 ):
     """Store secret / 시크릿 저장.
     
     Examples:
-        vaultctl admin put lxc-161 DB_HOST=postgres.local DB_PASSWORD=secret
-        vaultctl admin put lxc-161 NEW_KEY=value --merge
-        vaultctl admin put lxc-161 ONLY_THIS=value --replace
+        vaultctl admin put lxc-000 DB_HOST=postgres.local DB_PASSWORD=secret
+        vaultctl admin put lxc-000 NEW_KEY=value --merge
+        vaultctl admin put lxc-000 ONLY_THIS=value --replace
     """
     client = _get_authenticated_client()
     
     new_data = parse_key_value_args(data)
     if not new_data:
         console.print("[red]✗[/red] Provide data in KEY=value format.")
-        console.print("  Example: vaultctl admin put lxc-161 DB_HOST=localhost DB_PASSWORD=secret")
+        console.print("  Example: vaultctl admin put lxc-000 DB_HOST=localhost DB_PASSWORD=secret")
         raise typer.Exit(1)
 
     # Merge with existing
@@ -264,8 +264,8 @@ def delete_secret(
     """Delete secret / 시크릿 삭제.
     
     Examples:
-        vaultctl admin delete lxc-161
-        vaultctl admin delete lxc-161 --force
+        vaultctl admin delete lxc-000
+        vaultctl admin delete lxc-000 --force
     """
     client = _get_authenticated_client()
     
@@ -292,7 +292,7 @@ def import_secrets(
     
     JSON format:
         {
-            "lxc-161": {"DB_HOST": "localhost", "DB_PASSWORD": "secret"},
+            "lxc-000": {"DB_HOST": "localhost", "DB_PASSWORD": "secret"},
             "lxc-162": {"REDIS_URL": "redis://localhost:6379"}
         }
     

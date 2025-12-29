@@ -119,19 +119,19 @@ def main(
     \b
     Quick Start:
         vaultctl init              # Initial setup (one-time)
-        vaultctl env lxc-161       # Generate .env file
+        vaultctl env lxc-000       # Generate .env file
         docker compose up -d       # Run
     
     \b
     Advanced:
-        vaultctl run lxc-161 -- node app.js   # Run with injected env vars
-        vaultctl watch lxc-161 -- docker compose up  # Auto-restart
-        eval "$(vaultctl sh lxc-161)"         # Load shell env vars
+        vaultctl run lxc-000 -- node app.js   # Run with injected env vars
+        vaultctl watch lxc-000 -- docker compose up  # Auto-restart
+        eval "$(vaultctl sh lxc-000)"         # Load shell env vars
     
     \b
     Administrator:
         vaultctl admin list        # List secrets
-        vaultctl admin put lxc-161 DB_HOST=localhost
+        vaultctl admin put lxc-000 DB_HOST=localhost
         vaultctl admin setup vault # Initial Vault setup
     """
     if version:
@@ -280,7 +280,7 @@ VAULT_SECRET_ID={secret_id}
 
 @app.command("env")
 def env_command(
-    name: str = typer.Argument(..., help="Secret name (e.g., lxc-161) / 시크릿 이름"),
+    name: str = typer.Argument(..., help="Secret name (e.g., lxc-000) / 시크릿 이름"),
     output: Path = typer.Option(Path(".env"), "--output", "-o", help="Output file / 출력 파일"),
     stdout: bool = typer.Option(False, "--stdout", help="Output to stdout / stdout으로 출력"),
 ):
@@ -288,12 +288,12 @@ def env_command(
     
     \b
     Examples:
-        vaultctl env lxc-161              # Generate .env file
-        vaultctl env lxc-161 -o prod.env  # Custom filename
-        vaultctl env lxc-161 --stdout     # Output to stdout
+        vaultctl env lxc-000              # Generate .env file
+        vaultctl env lxc-000 -o prod.env  # Custom filename
+        vaultctl env lxc-000 --stdout     # Output to stdout
         
         # Use with docker compose
-        vaultctl env lxc-161 && docker compose up -d
+        vaultctl env lxc-000 && docker compose up -d
     """
     client = _get_authenticated_client()
     
