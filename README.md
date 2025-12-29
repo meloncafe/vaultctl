@@ -2,113 +2,70 @@
 
 **English** | [한국어](README.ko.md)
 
-HashiCorp Vault CLI with AppRole authentication.
+Simple Vault CLI for LXC environments.
 
-A CLI tool for centrally managing Proxmox LXC container passwords/URLs and Docker environment variables with Vault.
+A CLI tool for centrally managing secrets in Proxmox LXC containers with HashiCorp Vault.
 
 ## Table of Contents
 
 - [Features](#features)
 - [Architecture](#architecture)
 - [Installation](#installation)
-  - [Option 1: Quick Install from GitHub](#option-1-quick-install-from-github-recommended)
-  - [Option 2: Install from Private APT Server](#option-2-install-from-private-apt-server)
-  - [Option 3: Install from GitHub Releases](#option-3-install-from-github-releases)
-  - [Option 4: Build from Source](#option-4-build-from-source)
-- [Initial Setup](#initial-setup)
-- [Command Usage](#command-usage)
-- [Extended Commands (teller-style)](#extended-commands-teller-style)
-  - [vaultctl run](#vaultctl-run---run-with-injected-env-vars)
-  - [vaultctl sh](#vaultctl-sh---shell-integration)
-  - [vaultctl scan](#vaultctl-scan---secret-scanning-devsecops)
-  - [vaultctl redact](#vaultctl-redact---log-redaction)
-  - [vaultctl watch](#vaultctl-watch---secret-change-detection)
+- [Quick Start](#quick-start)
+- [Command Reference](#command-reference)
+  - [User Commands](#user-commands)
+  - [Admin Commands](#admin-commands)
+- [Extended Commands](#extended-commands-teller-style)
 - [APT Server Setup](#apt-server-setup)
-  - [GitHub Release Sync](#github-release-sync-repo-sync)
 - [Package Build and Deployment](#package-build-and-deployment)
-- [Update Flow](#update-flow)
 - [Security Notes](#security-notes)
 - [Troubleshooting](#troubleshooting)
-- [Comparison with teller](#comparison-with-teller)
 
 ---
 
 ## Features
 
-- 🔐 **AppRole Authentication**: Automatic token reissue on expiration (recommended for servers)
-- 📦 **LXC Management**: Centralized management of passwords, IPs, and configuration
-- 🐳 **Docker Support**: Automatic .env file generation, docker-compose integration
-- 🔄 **Auto Token Renewal**: Automated via systemd timer on servers
-- 📋 **Clipboard Copy**: Copy passwords directly to clipboard
+- 🔐 **Simple Setup**: Single `vaultctl init` command for initial configuration
+- 📦 **Secret Management**: Centralized management of environment variables per LXC
+- 🐳 **Docker Support**: Automatic .env file generation
+- 🔄 **Auto Token Renewal**: Automatic AppRole token reissue on expiration
 - 🎯 **Single Binary**: Install without Python dependencies (deb package)
-- 🚀 **Process Execution**: Run commands with injected environment variables (`vaultctl run`)
+- 🚀 **Process Execution**: Run commands with injected environment variables
 - 🔎 **Secret Scanning**: Search for hardcoded secrets in code (DevSecOps)
-- 🛡️ **Log Masking**: Automatic secret redaction in output/logs
-- 👁️ **Change Detection**: Auto-restart on Vault secret changes (`vaultctl watch`)
-- 🔗 **GitHub Release Sync**: Auto-deploy latest version from GitHub (`vaultctl repo sync`)
+- 👁️ **Change Detection**: Auto-restart on Vault secret changes
 
 ---
 
 ## Architecture
 
-```mermaid
-flowchart TB
-    subgraph DEV["🖥️ Dev Machine"]
-        BUILD["vaultctl<br/>build-deb.sh"]
-    end
-
-    subgraph GITHUB["🐙 GitHub"]
-        ACTIONS["GitHub Actions"]
-        RELEASE["Releases<br/>.deb artifacts"]
-    end
-
-    subgraph APT["📦 APT Server (LXC)"]
-        REPO["reprepro + Nginx<br/>GPG Signing"]
-    end
-
-    subgraph CLIENTS["🖧 Client LXCs"]
-        LXC1["130-n8n<br/>vaultctl (AppRole)"]
-        LXC2["180-db<br/>vaultctl (AppRole)"]
-        LXC3["170-sig<br/>vaultctl (AppRole)"]
-    end
-
-    subgraph VAULT["🔐 HashiCorp Vault"]
-        KV["proxmox/<br/>├── lxc/<br/>└── docker/"]
-    end
-
-    BUILD -->|"git tag v0.x.x"| ACTIONS
-    ACTIONS -->|"Build .deb"| RELEASE
-    RELEASE -->|"repo sync"| REPO
-    BUILD -->|"Direct upload"| REPO
-    
-    REPO -->|"apt install"| LXC1
-    REPO -->|"apt install"| LXC2
-    REPO -->|"apt install"| LXC3
-    
-    LXC1 <-->|"AppRole Auth<br/>Auto Token Renewal"| KV
-    LXC2 <-->|"AppRole Auth<br/>Auto Token Renewal"| KV
-    LXC3 <-->|"AppRole Auth<br/>Auto Token Renewal"| KV
 ```
-
-### Deployment Flow
-
-```mermaid
-sequenceDiagram
-    participant Dev as Dev Machine
-    participant GH as GitHub Actions
-    participant APT as APT Server
-    participant LXC as Client LXCs
-
-    Dev->>GH: git tag v0.x.x && git push --tags
-    GH->>GH: Build .deb package
-    GH->>GH: Create GitHub Release
-    
-    APT->>GH: vaultctl repo sync
-    GH-->>APT: Download .deb
-    APT->>APT: reprepro includedeb
-    
-    LXC->>APT: apt update && apt upgrade
-    APT-->>LXC: Install new version
+┌─────────────────────────────────────────────────────────────┐
+│                      Admin Workstation                       │
+├─────────────────────────────────────────────────────────────┤
+│  vaultctl admin setup vault    # Create Policy, AppRole     │
+│  vaultctl admin put lxc-161 DB_HOST=... DB_PASSWORD=...     │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    HashiCorp Vault                           │
+├─────────────────────────────────────────────────────────────┤
+│  proxmox/lxc/                                                │
+│  ├── lxc-161  { DB_HOST, DB_PASSWORD, REDIS_URL, ... }      │
+│  ├── lxc-162  { API_KEY, SECRET_KEY, ... }                  │
+│  └── lxc-163  { ... }                                        │
+└─────────────────────────────────────────────────────────────┘
+                              │
+              ┌───────────────┼───────────────┐
+              ▼               ▼               ▼
+┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
+│   LXC 161       │ │   LXC 162       │ │   LXC 163       │
+│   (n8n)         │ │   (gitea)       │ │   (postgres)    │
+├─────────────────┤ ├─────────────────┤ ├─────────────────┤
+│ vaultctl init   │ │ vaultctl init   │ │ vaultctl init   │
+│ vaultctl env    │ │ vaultctl env    │ │ vaultctl env    │
+│   lxc-161       │ │   lxc-162       │ │   lxc-163       │
+└─────────────────┘ └─────────────────┘ └─────────────────┘
 ```
 
 ---
@@ -117,403 +74,285 @@ sequenceDiagram
 
 ### Option 1: Quick Install from GitHub (Recommended)
 
-Install the latest release directly from GitHub with a single command:
-
 ```bash
 curl -fsSL https://raw.githubusercontent.com/meloncafe/vaultctl/main/scripts/install.sh | sudo bash
 ```
 
-Install a specific version:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/meloncafe/vaultctl/main/scripts/install.sh | VERSION=0.0.19 sudo bash
-```
-
 ### Option 2: Install from Private APT Server
 
-If you have a private APT repository set up:
-
 ```bash
-# 1. Client setup (one-time)
+# Client setup (one-time)
 curl -fsSL https://apt.example.com/setup-client.sh | sudo bash -s -- apt "password"
 
-# 2. Install
-sudo apt update
-sudo apt install vaultctl
-
-# 3. Update (after new version deployment)
-sudo apt update && sudo apt upgrade vaultctl
-```
-
-Manual setup:
-
-```bash
-# 1. Add GPG key
-curl -fsSL -u apt:PASSWORD https://apt.example.com/KEY.gpg | \
-    sudo gpg --dearmor -o /usr/share/keyrings/internal-apt.gpg
-
-# 2. Authentication setup (for private repository)
-echo "machine apt.example.com login apt password PASSWORD" | \
-    sudo tee /etc/apt/auth.conf.d/internal.conf
-sudo chmod 600 /etc/apt/auth.conf.d/internal.conf
-
-# 3. Add APT source
-echo "deb [signed-by=/usr/share/keyrings/internal-apt.gpg] https://apt.example.com stable main" | \
-    sudo tee /etc/apt/sources.list.d/internal.list
-
-# 4. Install
-sudo apt update
-sudo apt install vaultctl
-```
-
-### Option 3: Install from GitHub Releases
-
-```bash
-# Download latest release
-wget https://github.com/YOUR_USERNAME/vaultctl/releases/latest/download/vaultctl_0.1.0_amd64.deb
-
 # Install
-sudo apt install ./vaultctl_0.1.0_amd64.deb
+sudo apt update
+sudo apt install vaultctl
 ```
 
-### Option 4: Build from Source
+### Option 3: Build from Source
 
 ```bash
-# Clone repository
 git clone https://github.com/YOUR_USERNAME/vaultctl.git
 cd vaultctl
-
-# Setup development environment with Poetry
 poetry install
-
-# Run
 poetry run vaultctl --help
-
-# Or build deb package
-./build-deb.sh
-sudo apt install ./dist/vaultctl_*.deb
 ```
 
 ---
 
-## Initial Setup
+## Quick Start
 
-### Prerequisites: Vault AppRole Setup (Administrator)
+### For Administrators
 
-vaultctl recommends **AppRole authentication**. Tokens are automatically reissued when expired.
-
-#### 1. Create Vault Policy
+#### 1. Setup Vault (one-time)
 
 ```bash
-# Run on Vault server
-cat > vaultctl-policy.hcl << 'EOF'
-# KV v2 secret engine read/write
-path "proxmox/data/*" {
-  capabilities = ["create", "read", "update", "delete", "list"]
-}
-
-path "proxmox/metadata/*" {
-  capabilities = ["list", "read", "delete"]
-}
-
-# Token self-lookup and renewal
-path "auth/token/lookup-self" {
-  capabilities = ["read"]
-}
-
-path "auth/token/renew-self" {
-  capabilities = ["update"]
-}
-EOF
-
-vault policy write vaultctl vaultctl-policy.hcl
+vaultctl admin setup vault
 ```
 
-> **Note**: `proxmox` is the KV engine mount path. Adjust according to your environment.
+This creates:
+- Policy: `vaultctl` (read/write to proxmox/*)
+- AppRole: `vaultctl` with Role ID and Secret ID
 
-#### 2. Enable AppRole and Create Role
+#### 2. Register Secrets
 
 ```bash
-# Enable AppRole authentication (one-time)
-vault auth enable approle
+# Add secrets for LXC 161
+vaultctl admin put lxc-161 \
+  DB_HOST=postgres.internal \
+  DB_PASSWORD=supersecret \
+  REDIS_URL=redis://redis.internal:6379
 
-# Create role for vaultctl
-vault write auth/approle/role/vaultctl \
-  token_policies="vaultctl" \
-  token_ttl=1h \
-  token_max_ttl=4h \
-  secret_id_ttl=0 \
-  secret_id_num_uses=0
+# List all secrets
+vaultctl admin list
+
+# View specific secret
+vaultctl admin get lxc-161
 ```
 
-| Setting | Value | Description |
-|---------|-------|-------------|
-| `token_ttl` | 1h | Default TTL for issued tokens |
-| `token_max_ttl` | 4h | Maximum token TTL |
-| `secret_id_ttl` | 0 | No Secret ID expiration |
-| `secret_id_num_uses` | 0 | Unlimited Secret ID usage |
+### For Users (in each LXC)
 
-#### 3. Issue Role ID and Secret ID
+#### 1. Initial Setup (one-time)
 
 ```bash
-# Get Role ID (can be shared across servers)
-vault read auth/approle/role/vaultctl/role-id
-# e.g., role_id = "xxxx-xxxx-xxxx"
-
-# Generate Secret ID (recommended: different per server)
-vault write -f auth/approle/role/vaultctl/secret-id
-# e.g., secret_id = "yyyy-yyyy-yyyy"
+vaultctl init
 ```
 
-> **Security Tip**: Issue different Secret IDs per server to revoke access for specific servers only.
-
----
-
-### Method 1: Setup Wizard (Recommended)
-
-```bash
-sudo vaultctl setup init
-```
-
-Interactive setup for:
+Interactive prompts for:
 - Vault server address
-- Authentication method selection (AppRole recommended)
-- Role ID / Secret ID input
-- systemd auto-renewal timer
+- Role ID (from administrator)
+- Secret ID (from administrator)
 
-### Method 2: Manual Setup
+Configuration saved to `~/.config/vaultctl/config`
 
-```bash
-# 1. Create config file
-sudo cp /etc/vaultctl/config.example /etc/vaultctl/config
-sudo chmod 600 /etc/vaultctl/config
-
-# 2. Edit configuration
-sudo nano /etc/vaultctl/config
-```
-
-**AppRole Authentication** (`/etc/vaultctl/config`):
+#### 2. Generate .env and Run
 
 ```bash
-# Vault server address
-VAULT_ADDR=https://vault.example.com
-VAULTCTL_VAULT_ADDR=https://vault.example.com
+cd /opt/myapp
 
-# AppRole authentication (auto-reissue on expiration)
-VAULTCTL_APPROLE_ROLE_ID=xxxx-xxxx-xxxx
-VAULTCTL_APPROLE_SECRET_ID=yyyy-yyyy-yyyy
+# Generate .env file
+vaultctl env lxc-161
 
-# Token renewal settings (optional)
-VAULTCTL_TOKEN_RENEW_THRESHOLD=3600    # Renew when TTL < 1 hour
-VAULTCTL_TOKEN_RENEW_INCREMENT=86400   # Extend by 24 hours
+# Run with Docker Compose
+docker compose up -d
 ```
 
-**Direct Token Input** (not recommended, requires manual renewal):
+Or use `vaultctl run` for direct injection:
 
 ```bash
-# Vault server address
-VAULT_ADDR=https://vault.example.com
-VAULTCTL_VAULT_ADDR=https://vault.example.com
-
-# Vault token
-VAULT_TOKEN=hvs.xxxxxxxxxxxxxxxx
-
-# Token renewal settings (optional)
-VAULTCTL_TOKEN_RENEW_THRESHOLD=3600    # Renew when TTL < 1 hour
-VAULTCTL_TOKEN_RENEW_INCREMENT=86400   # Extend by 24 hours
+vaultctl run lxc-161 -- docker compose up -d
 ```
-
-```bash
-# 3. Enable auto token renewal (optional)
-sudo systemctl enable --now vaultctl-renew.timer
-
-# 4. Test configuration
-vaultctl setup test
-```
-
-### Authentication Method Comparison
-
-| Method | On Token Expiration | After Server Restart | Recommended For |
-|--------|---------------------|---------------------|-----------------|
-| **AppRole** (recommended) | Auto-reissue | Works normally | Servers, LXC, CI/CD |
-| Direct Token | Manual renewal needed | Works within TTL | Desktop, Testing |
-
-### Environment Variables Reference
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `VAULTCTL_VAULT_ADDR` | `https://vault.example.com` | Vault server address |
-| `VAULTCTL_VAULT_TOKEN` | - | Vault token (or `VAULT_TOKEN`) |
-| `VAULTCTL_APPROLE_ROLE_ID` | - | AppRole Role ID |
-| `VAULTCTL_APPROLE_SECRET_ID` | - | AppRole Secret ID |
-| `VAULTCTL_APPROLE_MOUNT` | `approle` | AppRole auth mount path |
-| `VAULTCTL_KV_MOUNT` | `proxmox` | KV secret engine mount path |
-| `VAULTCTL_KV_LXC_PATH` | `lxc` | LXC secrets path |
-| `VAULTCTL_KV_DOCKER_PATH` | `docker` | Docker secrets path |
-| `VAULTCTL_TOKEN_RENEW_THRESHOLD` | `3600` | Renewal threshold (seconds) |
-| `VAULTCTL_TOKEN_RENEW_INCREMENT` | `86400` | Renewal increment (seconds) |
 
 ---
 
-## Command Usage
+## Command Reference
 
-### Authentication (auth)
+### User Commands
 
-```bash
-# AppRole authentication (recommended for servers)
-vaultctl auth login --approle
+Commands for daily use in LXC containers.
 
-# Direct token input
-vaultctl auth login --token hvs.xxx
+| Command | Description |
+|---------|-------------|
+| `vaultctl init` | Initial setup (one-time) |
+| `vaultctl env <name>` | Generate .env file |
+| `vaultctl status` | Check connection and auth status |
+| `vaultctl config` | Show current configuration |
+| `vaultctl run <name> -- cmd` | Run command with injected env vars |
+| `vaultctl sh <name>` | Generate shell export statements |
+| `vaultctl watch <name> -- cmd` | Auto-restart on secret change |
+| `vaultctl scan` | Scan code for hardcoded secrets |
+| `vaultctl redact` | Mask secrets in logs |
 
-# Check auth and server status
-vaultctl auth status
-
-# Check token info
-vaultctl auth whoami
-
-# Logout (delete cached token)
-vaultctl auth logout
-```
-
-### LXC Management (lxc)
+#### vaultctl init
 
 ```bash
-# List all LXC
-vaultctl lxc list
-vaultctl lxc list --verbose  # Include detailed info
+$ vaultctl init
 
-# Get specific LXC info
-vaultctl lxc get 130-n8n
+🔐 Setup
+╭──────────────────────────────────────╮
+│ vaultctl 초기 설정                    │
+│                                       │
+│ Vault 연결 및 인증을 설정합니다.        │
+│ 이 설정은 한 번만 하면 됩니다.          │
+╰──────────────────────────────────────╯
 
-# Get specific field only
-vaultctl lxc get 130-n8n --field ip
-vaultctl lxc get 130-n8n -f root_password
+Vault 서버 주소: https://vault.example.com
+✓ 연결 성공
 
-# Copy field value to clipboard
-vaultctl lxc get 130-n8n -f root_password --copy
+AppRole 인증 정보
+Role ID: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+Secret ID: ********
 
-# Copy password to clipboard (shortcut)
-vaultctl lxc pass 130-n8n
-# or
-vaultctl pass 130-n8n
+✓ 인증 성공
+  Policies: vaultctl, default
+  TTL: 1시간
 
-# Save/update LXC info
-vaultctl lxc put 130-n8n root_password=newpass123 ip=10.10.10.130
-vaultctl lxc put 130-n8n url=https://n8n.example.com notes="N8N automation"
-
-# Delete LXC
-vaultctl lxc delete 130-n8n
-
-# Bulk import from JSON file
-vaultctl lxc import lxc-secrets.json
-vaultctl lxc import lxc-secrets.json --merge  # Merge with existing data
-
-# Export to JSON file
-vaultctl lxc export
-vaultctl lxc export --output backup.json
+✓ 설정 저장: ~/.config/vaultctl/
 ```
 
-`lxc-secrets.json` format:
+#### vaultctl env
 
+```bash
+# Generate .env in current directory
+vaultctl env lxc-161
+
+# Custom output path
+vaultctl env lxc-161 -o /opt/myapp/.env
+
+# Output to stdout
+vaultctl env lxc-161 --stdout
+```
+
+#### vaultctl status
+
+```bash
+$ vaultctl status
+
+vaultctl 상태
+
+1. 설정
+   Vault: https://vault.example.com
+   KV 경로: proxmox/lxc/
+   설정 디렉토리: ✓ ~/.config/vaultctl
+
+2. 연결
+   ✓ Vault 서버 연결됨
+
+3. 인증
+   ✓ 인증됨
+   Policies: vaultctl, default
+   TTL: 58분
+
+4. 시크릿 접근
+   ✓ 접근 가능 (5개 시크릿)
+
+✓ 모든 상태 정상
+```
+
+### Admin Commands
+
+Commands for administrators to manage secrets and infrastructure.
+
+| Command | Description |
+|---------|-------------|
+| `vaultctl admin list` | List all secrets |
+| `vaultctl admin get <name>` | Get secret details |
+| `vaultctl admin put <name> K=V...` | Store secrets |
+| `vaultctl admin delete <name>` | Delete secret |
+| `vaultctl admin import <file>` | Bulk import from JSON |
+| `vaultctl admin export` | Export all to JSON |
+| `vaultctl admin setup vault` | Setup Vault policy and AppRole |
+| `vaultctl admin setup apt-server` | Build APT repository server |
+| `vaultctl admin setup apt-client` | Configure APT client |
+| `vaultctl admin repo add <pkg>` | Add package to APT repo |
+| `vaultctl admin repo list` | List packages |
+| `vaultctl admin repo remove <pkg>` | Remove package |
+| `vaultctl admin token status` | Check token status |
+| `vaultctl admin token renew` | Renew token |
+
+#### Secret Management
+
+```bash
+# List all secrets
+vaultctl admin list
+vaultctl admin list -v  # verbose
+
+# Get specific secret
+vaultctl admin get lxc-161
+vaultctl admin get lxc-161 -f DB_PASSWORD       # specific field
+vaultctl admin get lxc-161 -f DB_PASSWORD -c    # copy to clipboard
+vaultctl admin get lxc-161 --raw                # JSON output
+
+# Store secrets
+vaultctl admin put lxc-161 DB_HOST=localhost DB_PASSWORD=secret
+vaultctl admin put lxc-161 NEW_KEY=value --merge    # merge with existing
+vaultctl admin put lxc-161 ONLY_THIS=value --replace  # replace all
+
+# Delete
+vaultctl admin delete lxc-161
+vaultctl admin delete lxc-161 --force  # no confirmation
+```
+
+#### Bulk Operations
+
+```bash
+# Export all secrets to JSON
+vaultctl admin export -o secrets.json
+
+# Import from JSON
+vaultctl admin import secrets.json
+vaultctl admin import secrets.json --dry-run  # validate only
+```
+
+JSON format:
 ```json
 {
-  "130-n8n": {
-    "root_password": "password123",
-    "ip": "10.10.10.130",
-    "url": "https://n8n.example.com",
-    "notes": "N8N automation server"
+  "lxc-161": {
+    "DB_HOST": "postgres.internal",
+    "DB_PASSWORD": "secret123"
   },
-  "180-database": {
-    "root_password": "dbpass456",
-    "ip": "10.10.10.180",
-    "mysql_root": "mysql_root_pass"
+  "lxc-162": {
+    "API_KEY": "xxxx",
+    "SECRET_KEY": "yyyy"
   }
 }
 ```
 
-### Docker Environment Variables (docker)
+#### Vault Setup
 
 ```bash
-# List Docker services
-vaultctl docker list
+$ vaultctl admin setup vault
 
-# Get service environment variables
-vaultctl docker get n8n
+🔐 Vault Setup
+╭──────────────────────────────────────╮
+│ This will create:                    │
+│ • Policy: vaultctl                   │
+│ • AppRole: vaultctl-role             │
+│ • KV secrets engine: proxmox/        │
+╰──────────────────────────────────────╯
 
-# Save environment variables
-vaultctl docker put n8n DB_HOST=10.10.10.180 DB_PASSWORD=secret123
+Vault server address [https://vault.example.com]: 
+Root/Admin token: ********
 
-# Generate .env file
-vaultctl docker env n8n                    # Create .env in current directory
-vaultctl docker env n8n --output /opt/n8n  # Create in specified path
-vaultctl docker env n8n --stdout           # Output to stdout
+1. KV Secrets Engine
+   ✓ Enabled: proxmox/
 
-# Import existing .env file to Vault
-vaultctl docker import-env n8n --file .env
-vaultctl docker import-env n8n -f .env --merge  # Merge with existing values
+2. Policy
+   ✓ Created: vaultctl
 
-# Run docker-compose (auto-load env vars)
-vaultctl docker compose n8n up -d
-vaultctl docker compose n8n logs -f
-vaultctl docker compose n8n down
+3. AppRole Auth
+   ✓ Enabled: approle/
 
-# Delete service
-vaultctl docker delete n8n
-```
+4. AppRole
+   ✓ Created: vaultctl
 
-### Token Management (token)
-
-```bash
-# Token detailed info
-vaultctl token info
-
-# Check if renewal needed (for scripts)
-vaultctl token check
-# Exit codes: 0=renewal needed, 1=no renewal needed, 2=error
-
-# Manual renewal
-vaultctl token renew
-vaultctl token renew --increment 172800  # Extend by 48 hours
-
-# Auto renewal (for systemd timer)
-vaultctl token auto-renew
-vaultctl token auto-renew --quiet  # Minimize logging
-
-# Create new token (admin)
-vaultctl token create --policies admin --ttl 720h
-vaultctl token create -p readonly -p lxc-read --ttl 0  # No expiration
-```
-
-### Setup Management (setup)
-
-```bash
-# Initial setup wizard
-sudo vaultctl setup init
-
-# systemd timer management
-vaultctl setup systemd --status   # Check status
-sudo vaultctl setup systemd --enable   # Enable
-sudo vaultctl setup systemd --disable  # Disable
-
-# Edit config file
-sudo vaultctl setup config --edit
-
-# Test connection
-vaultctl setup test
-```
-
-### Shortcut Commands
-
-```bash
-vaultctl login          # = auth login
-vaultctl status         # = auth status
-vaultctl ls             # = lxc list
-vaultctl ls docker      # = docker list
-vaultctl get 130-n8n    # = lxc get 130-n8n
-vaultctl pass 130-n8n   # = lxc pass 130-n8n
-vaultctl env n8n        # = docker env n8n
-vaultctl config         # Print current config
+5. Credentials
+────────────────────────────────────────
+Save these credentials securely!
+────────────────────────────────────────
+  Role ID:    xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+  Secret ID:  yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy
+────────────────────────────────────────
 ```
 
 ---
@@ -522,43 +361,40 @@ vaultctl config         # Print current config
 
 Advanced features inspired by [teller](https://github.com/tellerops/teller).
 
-### vaultctl run - Run with Injected Env Vars
+### vaultctl run
 
 Run processes with Vault environment variables injected.
 
 ```bash
-# Run process with Docker service env vars
-vaultctl run n8n -- node index.js
-vaultctl run n8n -- docker-compose up -d
+# Run with injected env vars
+vaultctl run lxc-161 -- node index.js
+vaultctl run lxc-161 -- docker compose up -d
 
 # Run shell command
-vaultctl run n8n --shell -- 'echo $DB_PASSWORD | base64'
-
-# Use LXC secrets
-vaultctl run 130-n8n --source lxc -- ./deploy.sh
+vaultctl run lxc-161 --shell -- 'echo $DB_PASSWORD | base64'
 
 # Reset existing env vars (isolated execution)
-vaultctl run n8n --reset -- python app.py
+vaultctl run lxc-161 --reset -- python app.py
 ```
 
-### vaultctl sh - Shell Integration
+### vaultctl sh
 
-Load environment variables directly in shell.
+Generate shell export statements for direct sourcing.
 
 ```bash
 # Load env vars in current shell
-eval "$(vaultctl sh n8n)"
+eval "$(vaultctl sh lxc-161)"
 
-# Add to .zshrc or .bashrc for auto-load
-eval "$(vaultctl sh n8n)"
+# Add to .bashrc/.zshrc
+echo 'eval "$(vaultctl sh lxc-161)"' >> ~/.bashrc
 
-# For Fish shell
-vaultctl sh n8n --format fish | source
+# Fish shell
+vaultctl sh lxc-161 --format fish | source
 ```
 
-### vaultctl scan - Secret Scanning (DevSecOps)
+### vaultctl scan
 
-Search for hardcoded Vault secrets in code.
+Search for hardcoded secrets in code (DevSecOps).
 
 ```bash
 # Scan current directory
@@ -567,548 +403,184 @@ vaultctl scan
 # Scan specific path
 vaultctl scan ./src
 
-# Search for specific service secrets only
-vaultctl scan --service n8n
-
-# For CI/CD pipelines (exit code 1 if found)
+# For CI/CD (exit 1 if secrets found)
 vaultctl scan --error-if-found
 
 # JSON output
 vaultctl scan --json
 
-# Exclude specific directories
-vaultctl scan --exclude node_modules --exclude .git
+# Scan specific secret only
+vaultctl scan --name lxc-161
 ```
 
-CI/CD pipeline example:
+### vaultctl redact
 
-```yaml
-# .github/workflows/security.yml
-jobs:
-  secret-scan:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Scan for hardcoded secrets
-        run: vaultctl scan --error-if-found
-```
-
-### vaultctl redact - Log Redaction
-
-Mask secrets in output or logs.
+Mask secrets in logs or output.
 
 ```bash
-# Mask secrets from stdin
+# Pipe through redact
 cat app.log | vaultctl redact
 
-# Real-time log redaction
+# Real-time log masking
 tail -f /var/log/app.log | vaultctl redact
 
 # Process file
 vaultctl redact --in dirty.log --out clean.log
 
-# Mask only specific service secrets
-cat log.txt | vaultctl redact --service n8n
-
-# Custom mask string
+# Custom mask
 vaultctl redact --mask "[HIDDEN]" < input.log
 ```
 
-### vaultctl watch - Secret Change Detection
+### vaultctl watch
 
-Automatically restart processes when Vault secrets change.
+Auto-restart processes when Vault secrets change.
 
 ```bash
-# Auto-restart on secret change
-vaultctl watch n8n -- docker-compose up -d
+# Watch and restart on change
+vaultctl watch lxc-161 -- docker compose up -d
 
-# Set check interval (default 60 seconds)
-vaultctl watch n8n --interval 300 -- docker-compose restart
+# Custom check interval (default 60s)
+vaultctl watch lxc-161 --interval 300 -- docker compose up -d
 
-# Send SIGHUP (config reload)
-vaultctl watch n8n --on-change reload -- ./app
-
-# Execute command only (no process management)
-vaultctl watch n8n --on-change exec -- ./notify-slack.sh
+# Send SIGHUP instead of restart
+vaultctl watch lxc-161 --on-change reload -- ./app
 ```
 
 Register as systemd service:
 
-```bash
-cat > /etc/systemd/system/n8n-watcher.service << EOF
+```ini
+# /etc/systemd/system/myapp-watcher.service
 [Unit]
-Description=N8N Secret Watcher
+Description=MyApp Secret Watcher
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/vaultctl watch n8n -- docker-compose -f /opt/n8n/docker-compose.yml up -d
+ExecStart=/usr/bin/vaultctl watch lxc-161 -- docker compose -f /opt/myapp/docker-compose.yml up
 Restart=always
-EnvironmentFile=/etc/vaultctl/config
-WorkingDirectory=/opt/n8n
+WorkingDirectory=/opt/myapp
 
 [Install]
 WantedBy=multi-user.target
-EOF
-
-sudo systemctl daemon-reload
-sudo systemctl enable --now n8n-watcher
 ```
 
-**Use Cases:**
-- Auto-restart on DB password change
-- Service reload after API key rotation
-- Zero-downtime deployment on config change
+---
+
+## Configuration
+
+### Configuration Files
+
+| Path | Description |
+|------|-------------|
+| `~/.config/vaultctl/config` | User configuration |
+| `~/.cache/vaultctl/token` | Cached token |
+| `/etc/vaultctl/config` | System configuration (admin) |
+
+### Configuration Format
+
+```bash
+# ~/.config/vaultctl/config
+VAULT_ADDR=https://vault.example.com
+VAULT_ROLE_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+VAULT_SECRET_ID=yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy
+```
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VAULTCTL_VAULT_ADDR` | `https://vault.example.com` | Vault server address |
+| `VAULTCTL_VAULT_TOKEN` | - | Vault token (optional) |
+| `VAULTCTL_APPROLE_ROLE_ID` | - | AppRole Role ID |
+| `VAULTCTL_APPROLE_SECRET_ID` | - | AppRole Secret ID |
+| `VAULTCTL_KV_MOUNT` | `proxmox` | KV engine mount path |
+| `VAULTCTL_KV_LXC_PATH` | `lxc` | Secrets path |
 
 ---
 
 ## APT Server Setup
 
-### Prerequisites
-
-- Ubuntu 22.04+ LXC
-- Domain (e.g., `apt.internal.example.com`)
-- Traefik or reverse proxy (for HTTPS, Traefik mode)
-
-### Interactive Installation (Recommended)
-
-Build APT server interactively on an LXC with vaultctl installed:
+### Build APT Server
 
 ```bash
-# APT server installation (interactive wizard)
-sudo vaultctl setup apt-server
+sudo vaultctl admin setup apt-server
 ```
 
-Interactive configuration for:
-- **Web server mode**: Caddy (standalone) or Traefik (backend)
-- **Domain**: apt.example.com
-- **GPG signing info**: Email, key name
-- **Repository settings**: Name, codename, architecture
-- **Authentication**: Username/password (optional)
+Interactive setup for:
+- Web server mode (Caddy/Traefik)
+- Domain configuration
+- GPG signing
+- Authentication
 
-```
-$ sudo vaultctl setup apt-server
-
-Select web server mode
-  1. Caddy - Standalone with automatic HTTPS (Let's Encrypt)
-  2. Traefik - Backend for existing Traefik reverse proxy
-
-Choice [1]: 2
-
-╭── 📦 APT Server ─────────────────────╮
-│ APT Repository Server Setup                    │
-│                                                 │
-│ Web server: TRAEFIK                             │
-│ Full installation                               │
-╰─────────────────────────────────────────────────╯
-
-Domain (e.g., apt.example.com): apt.internal.example.com
-GPG signing email: apt@example.com
-GPG key name [APT Repository Signing Key]: 
-Repository name [internal]: 
-Distribution codename [stable]: 
-Architecture [amd64]: 
-Enable authentication? [Y/n]: y
-Auth username [apt]: 
-Password: 
-
-Configuration Summary
-  Domain        apt.internal.example.com
-  GPG Email     apt@example.com
-  Repository    internal
-  Codename      stable
-  Web Server    TRAEFIK
-  Auth          Enabled
-  Username      apt
-  Password      ********
-  Listen Port   8080
-
-Proceed with this configuration? [Y/n]: 
-```
-
-### Reconfiguration Mode
-
-To modify existing settings:
+### Configure APT Client
 
 ```bash
-sudo vaultctl setup apt-server --reconfigure
+sudo vaultctl admin setup apt-client https://apt.example.com -u apt -p "password"
 ```
 
-### Client Setup
-
-Configure client LXC to use the APT repository:
-
-```bash
-# Interactive installation
-sudo vaultctl setup apt-client https://apt.example.com
-
-# With authentication
-sudo vaultctl setup apt-client https://apt.example.com -u apt -p "password"
-
-# Remove
-sudo vaultctl setup apt-client https://apt.example.com --remove
-```
-
-Or one-liner script:
-
-```bash
-# Authenticated repository
-curl -fsSL https://apt.example.com/setup-client.sh | sudo bash -s -- apt "password"
-
-# Public repository
-curl -fsSL https://apt.example.com/setup-client.sh | sudo bash
-```
-
-### Traefik Configuration Example
-
-If installed in Traefik mode, add this Traefik configuration:
-
-```yaml
-# /etc/traefik/dynamic/apt-repo.yml
-http:
-  routers:
-    apt-repo:
-      rule: "Host(`apt.internal.example.com`)"
-      entryPoints:
-        - websecure
-      tls:
-        certResolver: letsencrypt
-      service: apt-repo
-  
-  services:
-    apt-repo:
-      loadBalancer:
-        servers:
-          - url: "http://10.10.10.122:8080"  # APT LXC IP:Port
-```
-
-### APT Repository Management (repo)
-
-Package add/remove commands:
+### Manage Packages
 
 ```bash
 # Add package
-vaultctl repo add vaultctl_0.1.0_amd64.deb
+vaultctl admin repo add vaultctl_0.1.0_amd64.deb
 
 # List packages
-vaultctl repo list
+vaultctl admin repo list
 
 # Remove package
-vaultctl repo remove vaultctl
+vaultctl admin repo remove vaultctl
 
-# Repository info
-vaultctl repo info
-
-# Output client installation commands
-vaultctl repo export
-
-# Verify repository integrity
-vaultctl repo check
-
-# Clean old files
-vaultctl repo clean
-```
-
-### GitHub Release Sync (repo sync)
-
-Automatically fetch the latest version from GitHub releases and deploy to APT repository.
-
-**Prerequisites:**
-- GitHub CLI (`gh`) installed and authenticated: `gh auth login`
-
-```bash
-# Configure GitHub repository (one-time)
-vaultctl repo config --github-repo owner/repo
-vaultctl repo config -g harmonys-app/vaultctl
-
-# Check current configuration
-vaultctl repo config
-
-# Check for and deploy latest release
-vaultctl repo sync
-
-# Check for updates only (don't deploy)
-vaultctl repo sync --check
-
-# Force deploy (even if same version)
-vaultctl repo sync --force
-```
-
-**Example output:**
-```
-$ vaultctl repo sync
-Checking GitHub releases...
-  Repository: harmonys-app/vaultctl
-  Latest release: v0.2.0 (v0.2.0)
-  Published: 2025-01-15
-  Current version: 0.1.0
-
-Downloading release v0.2.0...
-  Downloaded: vaultctl_0.2.0_amd64.deb
-
-Deploying to APT repository...
-✓ Successfully deployed vaultctl_0.2.0_amd64.deb
-
-  Clients can update with:
-    sudo apt update && sudo apt upgrade vaultctl
-```
-
-### HTTPS Certificate vs GPG Signing Key
-
-**These serve completely different purposes:**
-
-| Item | HTTPS Certificate | GPG Signing Key |
-|------|-------------------|-----------------|
-| **Purpose** | Encrypt communication | Verify package integrity |
-| **Issued by** | Let's Encrypt (CA) | Self-generated |
-| **Managed by** | Traefik/Caddy | reprepro |
-| **Renewal** | Automatic (90 days) | Not required (can be permanent) |
-
-```
-[Client] ──HTTPS(Let's Encrypt)──▶ [APT Server]
-                                        │
-                                  .deb download
-                                        │
-                                        ▼
-                                  GPG signature verification
-                                  (Self-generated key)
+# Sync from GitHub releases
+vaultctl admin repo sync
 ```
 
 ---
 
 ## Package Build and Deployment
 
-### Build Requirements
-
-- Python 3.10+
-- Poetry
-- Ruby + fpm (`gem install fpm`)
-- PyInstaller
-
-### Build Steps
+### Build
 
 ```bash
-# 1. Clone repository
+# Clone and build
 git clone https://github.com/YOUR_USERNAME/vaultctl.git
 cd vaultctl
-
-# 2. Update version (if needed)
-# Edit version in pyproject.toml and src/vaultctl/__init__.py
-
-# 3. Build deb package
 ./build-deb.sh
 
-# Result: dist/vaultctl_0.1.0_amd64.deb
+# Result: dist/vaultctl_x.x.x_amd64.deb
 ```
 
-### Deploy to APT Server
+### Deploy
 
 ```bash
-# 1. Copy deb file to APT server
-scp dist/vaultctl_0.1.0_amd64.deb root@apt-server:/tmp/
+# Copy to APT server
+scp dist/vaultctl_*.deb root@apt-server:/tmp/
 
-# 2. Add package on APT server
-ssh root@apt-server
-apt-repo-add /tmp/vaultctl_0.1.0_amd64.deb
+# Add to repository
+ssh root@apt-server "vaultctl admin repo add /tmp/vaultctl_*.deb"
 
-# 3. Verify
-apt-repo-list
-```
-
-### GitHub Releases Deployment (Automated)
-
-```bash
-# 1. Create version tag
-git tag v0.1.0
-git push origin v0.1.0
-
-# 2. GitHub Actions automatically:
-#    - Builds deb package
-#    - Uploads to GitHub Releases
-#    - Updates GitHub Pages APT repository (optional)
-```
-
----
-
-## Update Flow
-
-### Scenario 1: Code Change with Full Deployment
-
-```bash
-# On dev machine
-cd vaultctl
-
-# 1. Modify code
-vim src/vaultctl/commands/lxc.py
-
-# 2. Update version
-# pyproject.toml: version = "0.2.0"
-# src/vaultctl/__init__.py: __version__ = "0.2.0"
-
-# 3. Build
-./build-deb.sh
-
-# 4. Deploy to APT server
-scp dist/vaultctl_0.2.0_amd64.deb root@apt-server:/tmp/
-ssh root@apt-server "apt-repo-add /tmp/vaultctl_0.2.0_amd64.deb"
-
-# On each LXC
-sudo apt update
-sudo apt upgrade vaultctl
-```
-
-### Scenario 2: GitHub Release (Automated)
-
-```bash
-# On dev machine
-cd vaultctl
-
-# 1. Modify and commit code
-git add .
-git commit -m "feat: add new feature"
-
-# 2. Tag version
-git tag v0.2.0
-git push origin main --tags
-
-# 3. GitHub Actions automatically builds and deploys
-
-# On each LXC (if using GitHub Pages APT)
-sudo apt update
-sudo apt upgrade vaultctl
-```
-
-### Scenario 3: GitHub Release Sync (repo sync)
-
-Automatically fetch and deploy GitHub releases from the APT server.
-
-```bash
-# On APT server (one-time setup)
-vaultctl repo config -g harmonys-app/vaultctl
-
-# Check for latest version
-vaultctl repo sync --check
-
-# Deploy
-vaultctl repo sync
-
-# On each LXC
-sudo apt update
-sudo apt upgrade vaultctl
-```
-
-**Benefits:**
-- No need to SCP files from dev machine
-- Single command deployment after GitHub Actions build
-- Version comparison prevents duplicate deployment
-
-### Scenario 4: Emergency Patch
-
-```bash
-# Rollback to previous version on APT server
-apt-repo-remove vaultctl
-apt-repo-add /backup/vaultctl_0.1.0_amd64.deb
-
-# On each LXC
-sudo apt update
-sudo apt install --reinstall vaultctl
-```
-
----
-
-## Per-LXC Setup Tasks
-
-### Initial Setup (One-time)
-
-```bash
-# 1. APT client setup
-curl -fsSL https://apt.example.com/setup-client.sh | sudo bash -s -- apt "password"
-
-# 2. Install vaultctl
-sudo apt update
-sudo apt install vaultctl
-
-# 3. Initial configuration
-sudo vaultctl setup init
-
-# Or manual setup
-sudo cp /etc/vaultctl/config.example /etc/vaultctl/config
-sudo nano /etc/vaultctl/config  # Configure VAULT_ADDR, authentication
-sudo chmod 600 /etc/vaultctl/config
-
-# 4. Enable auto token renewal
-sudo systemctl enable --now vaultctl-renew.timer
-
-# 5. Test
-vaultctl status
-vaultctl lxc list
-```
-
-### Daily Usage
-
-```bash
-# Get password
-vaultctl pass 130-n8n
-
-# Run service with Docker env vars
-cd /opt/n8n
-vaultctl docker env n8n
-docker-compose up -d
-
-# Or all at once
-vaultctl docker compose n8n up -d
-```
-
-### Updates
-
-```bash
-sudo apt update
-sudo apt upgrade vaultctl
+# Clients update
+sudo apt update && sudo apt upgrade vaultctl
 ```
 
 ---
 
 ## Security Notes
 
-### Token Management
-
-| Environment | Recommended Method |
-|-------------|-------------------|
-| Desktop | Direct token input, TTL=0 token |
-| Server (LXC) | AppRole in `/etc/vaultctl/config`, systemd timer for auto-renewal |
-
-```bash
-# Create server token (admin)
-vault token create -policy=lxc-read -policy=docker-read -ttl=720h
-
-# Or with vaultctl
-vaultctl token create -p lxc-read -p docker-read --ttl 720h
-```
-
 ### File Permissions
 
 ```bash
-# Config file
-sudo chmod 600 /etc/vaultctl/config
+# User config (contains credentials)
+chmod 600 ~/.config/vaultctl/config
 
-# APT auth file
-sudo chmod 600 /etc/apt/auth.conf.d/internal.conf
+# Token cache
+chmod 600 ~/.cache/vaultctl/token
 ```
 
-### IP Restrictions (Additional Security)
+### Token Management
 
-Allow access only from Tailscale/WireGuard networks:
-
-```nginx
-# APT server Nginx config
-location / {
-    allow 100.64.0.0/10;  # Tailscale
-    allow 10.10.10.0/24;  # Internal network
-    deny all;
-    
-    # ... existing config
-}
-```
+- AppRole tokens are automatically renewed on expiration
+- Cached tokens are stored in `~/.cache/vaultctl/token`
+- Use `vaultctl admin token status` to check token TTL
 
 ---
 
@@ -1117,137 +589,54 @@ location / {
 ### Authentication Errors
 
 ```bash
-# Check token status
-vaultctl token info
+# Check status
+vaultctl status
 
-# On token expiration (auto-reissue with AppRole)
-vaultctl auth login --approle
-# Or manually update token
-sudo nano /etc/vaultctl/config
+# Re-initialize
+vaultctl init
 ```
 
-### APT Update Failures
+### Connection Issues
 
 ```bash
-# GPG key issues
-sudo rm /usr/share/keyrings/internal-apt.gpg
-curl -fsSL -u apt:PASS https://apt.example.com/KEY.gpg | \
-    sudo gpg --dearmor -o /usr/share/keyrings/internal-apt.gpg
-
-# Authentication issues
-cat /etc/apt/auth.conf.d/internal.conf  # Verify
-sudo apt update 2>&1 | grep -i auth
-```
-
-### systemd Timer Issues
-
-```bash
-# Check timer status
-systemctl status vaultctl-renew.timer
-systemctl list-timers | grep vaultctl
-
-# Manual execution test
-sudo systemctl start vaultctl-renew.service
-journalctl -u vaultctl-renew.service -f
-```
-
-### Vault Connection Issues
-
-```bash
-# Test connection
-vaultctl setup test
-
-# Direct verification
+# Test Vault connection
 curl -s https://vault.example.com/v1/sys/health | jq
 
-# Check environment variables
+# Check config
 vaultctl config
+```
+
+### Token Expiration
+
+```bash
+# Check token
+vaultctl admin token status
+
+# Renew token
+vaultctl admin token renew
+
+# Or re-authenticate (AppRole)
+vaultctl init
 ```
 
 ---
 
-## File Structure
+## Migration from Previous Version
 
-```
-vaultctl/
-├── src/vaultctl/           # Python source code
-│   ├── cli.py              # Main CLI
-│   ├── config.py           # Configuration management
-│   ├── vault_client.py     # Vault API client
-│   ├── utils.py            # Utilities
-│   ├── templates.py        # Jinja2 template rendering
-│   ├── templates/          # Config file templates (.j2)
-│   │   ├── config.j2       # vaultctl config template
-│   │   └── apt/            # APT server templates
-│   │       ├── Caddyfile.j2
-│   │       ├── nginx.conf.j2
-│   │       ├── index.html.j2
-│   │       ├── setup-client.sh.j2
-│   │       ├── distributions.j2
-│   │       ├── options.j2
-│   │       ├── gpg-batch.j2
-│   │       ├── apt-config.j2
-│   │       ├── fancyindex-header.html.j2
-│   │       └── fancyindex-footer.html.j2
-│   └── commands/           # Subcommands
-│       ├── auth.py         # Authentication management
-│       ├── lxc.py          # LXC management
-│       ├── docker.py       # Docker env vars
-│       ├── token.py        # Token management
-│       ├── setup.py        # Initial setup (init, apt-server, apt-client, systemd)
-│       ├── repo.py         # APT repository management (add, remove, list, sync, config)
-│       └── extended.py     # Extended commands (run, sh, scan, redact, watch)
-├── packaging/              # deb package configuration
-│   ├── etc/
-│   │   └── config.example  # vaultctl config example
-│   ├── scripts/            # Package install/remove scripts
-│   └── systemd/            # systemd unit files
-│       ├── vaultctl-renew.service
-│       └── vaultctl-renew.timer
-├── .github/workflows/      # GitHub Actions
-│   └── release.yml
-├── build-deb.sh           # deb package build
-├── vaultctl.spec          # PyInstaller spec
-├── pyproject.toml         # Poetry configuration
-└── README.md
-```
+| Old Command | New Command |
+|-------------|-------------|
+| `vaultctl setup init` | `vaultctl init` |
+| `vaultctl auth login` | `vaultctl init` |
+| `vaultctl auth status` | `vaultctl status` |
+| `vaultctl lxc list` | `vaultctl admin list` |
+| `vaultctl lxc get <n>` | `vaultctl admin get <n>` |
+| `vaultctl lxc put <n>` | `vaultctl admin put <n>` |
+| `vaultctl docker env <n>` | `vaultctl env <n>` |
+| `vaultctl token renew` | `vaultctl admin token renew` |
+| `vaultctl repo add` | `vaultctl admin repo add` |
 
 ---
 
 ## License
 
 MIT License
-
----
-
-## Comparison with teller
-
-[teller](https://github.com/tellerops/teller) is an open-source tool with similar purposes.
-
-| Feature | teller | vaultctl |
-|---------|--------|----------|
-| **Language** | Rust | Python |
-| **Providers** | 10+ (Vault, AWS, GCP, etc.) | Vault only |
-| **Process execution** | ✅ `teller run` | ✅ `vaultctl run` |
-| **Shell integration** | ✅ `teller sh` | ✅ `vaultctl sh` |
-| **Secret scanning** | ✅ `teller scan` | ✅ `vaultctl scan` |
-| **Log redaction** | ✅ `teller redact` | ✅ `vaultctl redact` |
-| **Template rendering** | ✅ Tera | ❌ |
-| **Provider sync** | ✅ `teller copy` | ❌ |
-| **Change detection** | ❌ | ✅ `vaultctl watch` |
-| **LXC-specific management** | ❌ | ✅ |
-| **Auto token renewal** | ❌ | ✅ systemd timer |
-| **Clipboard copy** | ❌ | ✅ |
-| **APT package** | ❌ Binary only | ✅ deb + APT repo |
-| **GitHub release sync** | ❌ | ✅ `vaultctl repo sync` |
-
-**When to use teller?**
-- Multi-cloud environment (AWS + GCP + Azure)
-- Need provider-to-provider secret sync
-- Need Tera template rendering
-
-**When to use vaultctl?**
-- Proxmox + Vault single environment
-- LXC container management
-- Need auto-restart on secret change
-- Need APT repository setup
