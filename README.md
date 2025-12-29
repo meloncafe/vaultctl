@@ -50,55 +50,64 @@ A CLI tool for centrally managing Proxmox LXC container passwords/URLs and Docke
 
 ## Architecture
 
+```mermaid
+flowchart TB
+    subgraph DEV["🖥️ Dev Machine"]
+        BUILD["vaultctl<br/>build-deb.sh"]
+    end
+
+    subgraph GITHUB["🐙 GitHub"]
+        ACTIONS["GitHub Actions"]
+        RELEASE["Releases<br/>.deb artifacts"]
+    end
+
+    subgraph APT["📦 APT Server (LXC)"]
+        REPO["reprepro + Nginx<br/>GPG Signing"]
+    end
+
+    subgraph CLIENTS["🖧 Client LXCs"]
+        LXC1["130-n8n<br/>vaultctl (AppRole)"]
+        LXC2["180-db<br/>vaultctl (AppRole)"]
+        LXC3["170-sig<br/>vaultctl (AppRole)"]
+    end
+
+    subgraph VAULT["🔐 HashiCorp Vault"]
+        KV["proxmox/<br/>├── lxc/<br/>└── docker/"]
+    end
+
+    BUILD -->|"git tag v0.x.x"| ACTIONS
+    ACTIONS -->|"Build .deb"| RELEASE
+    RELEASE -->|"repo sync"| REPO
+    BUILD -->|"Direct upload"| REPO
+    
+    REPO -->|"apt install"| LXC1
+    REPO -->|"apt install"| LXC2
+    REPO -->|"apt install"| LXC3
+    
+    LXC1 <-->|"AppRole Auth<br/>Auto Token Renewal"| KV
+    LXC2 <-->|"AppRole Auth<br/>Auto Token Renewal"| KV
+    LXC3 <-->|"AppRole Auth<br/>Auto Token Renewal"| KV
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         System Architecture                              │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  ┌─────────────┐                                                        │
-│  │  Dev Machine │                                                        │
-│  │   (Build)    │                                                        │
-│  │             │                                                        │
-│  │ vaultctl    │                                                        │
-│  │ build-deb   │                                                        │
-│  └──────┬──────┘                                                        │
-│         │                                                               │
-│         │ ./build-deb.sh                                                │
-│         ▼                                                               │
-│  ┌─────────────┐      ┌─────────────┐                                  │
-│  │ .deb Package │─────▶│  APT Server │                                  │
-│  │             │      │   (LXC)     │                                  │
-│  └─────────────┘      │             │                                  │
-│                       │ reprepro    │◄─── GPG Signing                  │
-│                       │ + Nginx     │                                  │
-│                       └──────┬──────┘                                  │
-│                              │                                          │
-│          ┌───────────────────┼───────────────────┐                     │
-│          │                   │                   │                     │
-│          ▼                   ▼                   ▼                     │
-│   ┌────────────┐      ┌────────────┐      ┌────────────┐              │
-│   │  130-n8n   │      │  180-db    │      │  170-sig   │              │
-│   │            │      │            │      │            │              │
-│   │ vaultctl   │      │ vaultctl   │      │ vaultctl   │              │
-│   │ (AppRole)  │      │ (AppRole)  │      │ (AppRole)  │              │
-│   │            │      │            │      │            │              │
-│   │ Auto token │      │ Auto token │      │ Auto token │              │
-│   │ reissue    │      │ reissue    │      │ reissue    │              │
-│   └─────┬──────┘      └─────┬──────┘      └─────┬──────┘              │
-│         │                   │                   │                     │
-│         └───────────────────┼───────────────────┘                     │
-│                             │                                          │
-│                             ▼                                          │
-│                    ┌─────────────────┐                                 │
-│                    │  HashiCorp      │                                 │
-│                    │  Vault          │                                 │
-│                    │                 │                                 │
-│                    │ proxmox/        │                                 │
-│                    │ ├── lxc/        │                                 │
-│                    │ └── docker/     │                                 │
-│                    └─────────────────┘                                 │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
+
+### Deployment Flow
+
+```mermaid
+sequenceDiagram
+    participant Dev as Dev Machine
+    participant GH as GitHub Actions
+    participant APT as APT Server
+    participant LXC as Client LXCs
+
+    Dev->>GH: git tag v0.x.x && git push --tags
+    GH->>GH: Build .deb package
+    GH->>GH: Create GitHub Release
+    
+    APT->>GH: vaultctl repo sync
+    GH-->>APT: Download .deb
+    APT->>APT: reprepro includedeb
+    
+    LXC->>APT: apt update && apt upgrade
+    APT-->>LXC: Install new version
 ```
 
 ---

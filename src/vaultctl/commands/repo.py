@@ -63,6 +63,26 @@ def _check_gh_installed() -> bool:
         return False
 
 
+def _check_gh_authenticated() -> tuple[bool, str]:
+    """Check if GitHub CLI is authenticated / GitHub CLI 인증 여부 확인.
+    
+    Returns:
+        tuple: (is_authenticated, error_message)
+    """
+    try:
+        result = subprocess.run(
+            ["gh", "auth", "status"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            return True, ""
+        else:
+            return False, result.stderr.strip()
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        return False, str(e)
+
+
 def _get_installed_version(package: str, codename: str) -> Optional[str]:
     """Get currently installed package version / 현재 설치된 패키지 버전 확인."""
     os.environ["GNUPGHOME"] = str(APT_GPG_HOME)
@@ -88,14 +108,35 @@ def _get_github_latest_release(repo: str) -> Optional[dict]:
             ["gh", "release", "list", "-R", repo, "--limit", "1", "--json", "tagName,name,publishedAt,isLatest"],
             capture_output=True,
             text=True,
-            check=True,
         )
+        
+        # Handle specific exit codes
+        if result.returncode == 4:
+            # Exit code 4: authentication required
+            console.print("[red]✗[/red] GitHub CLI authentication required.")
+            console.print("  [dim]gh is installed but not authenticated for this user.[/dim]")
+            console.print("")
+            console.print("  If running with sudo, authenticate as root:")
+            console.print("    [cyan]sudo gh auth login[/cyan]")
+            console.print("")
+            console.print("  Or pass your token via environment variable:")
+            console.print("    [cyan]sudo GH_TOKEN=$(gh auth token) vaultctl repo sync[/cyan]")
+            return None
+        elif result.returncode != 0:
+            console.print(f"[red]✗[/red] GitHub CLI error (exit code {result.returncode})")
+            if result.stderr:
+                console.print(f"  {result.stderr.strip()}")
+            return None
+        
         releases = json.loads(result.stdout)
         if releases:
             return releases[0]
         return None
-    except (subprocess.CalledProcessError, json.JSONDecodeError) as e:
-        console.print(f"[red]✗[/red] Failed to get release info: {e}")
+    except json.JSONDecodeError as e:
+        console.print(f"[red]✗[/red] Failed to parse release info: {e}")
+        return None
+    except FileNotFoundError:
+        console.print("[red]✗[/red] GitHub CLI (gh) not found.")
         return None
 
 
@@ -106,16 +147,27 @@ def _download_deb_from_release(repo: str, tag: str, dest_dir: Path) -> Optional[
             ["gh", "release", "download", tag, "-R", repo, "--pattern", "*.deb", "-D", str(dest_dir)],
             capture_output=True,
             text=True,
-            check=True,
         )
+        
+        # Handle specific exit codes
+        if result.returncode == 4:
+            console.print("[red]✗[/red] GitHub CLI authentication required for download.")
+            console.print("  [cyan]sudo gh auth login[/cyan]")
+            console.print("  or: [cyan]sudo GH_TOKEN=$(gh auth token) vaultctl repo sync[/cyan]")
+            return None
+        elif result.returncode != 0:
+            console.print(f"[red]✗[/red] Download failed (exit code {result.returncode})")
+            if result.stderr:
+                console.print(f"  {result.stderr.strip()}")
+            return None
         
         # Find downloaded deb file / 다운로드된 deb 파일 찾기
         for f in dest_dir.iterdir():
             if f.suffix == ".deb":
                 return f
         return None
-    except subprocess.CalledProcessError as e:
-        console.print(f"[red]✗[/red] Failed to download: {e.stderr}")
+    except FileNotFoundError:
+        console.print("[red]✗[/red] GitHub CLI (gh) not found.")
         return None
 
 

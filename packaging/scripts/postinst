@@ -14,25 +14,45 @@
 
 set -e
 
-# Reload systemd and reset failed states
-# systemd 리로드 및 실패 상태 초기화
+CONFIG_DIR="/etc/vaultctl"
+OLD_CONFIG="$CONFIG_DIR/env"
+NEW_CONFIG="$CONFIG_DIR/config"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Migration: env → config (for upgrades from older versions)
+# 마이그레이션: env → config (이전 버전에서 업그레이드 시)
+# ─────────────────────────────────────────────────────────────────────────────
+if [[ -f "$OLD_CONFIG" ]] && [[ ! -f "$NEW_CONFIG" ]]; then
+    echo "[vaultctl] Migrating config: env → config"
+    cp "$OLD_CONFIG" "$NEW_CONFIG"
+    chmod 600 "$NEW_CONFIG"
+    echo "[vaultctl] Migration complete. Old file kept as backup: $OLD_CONFIG"
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# systemd setup
+# ─────────────────────────────────────────────────────────────────────────────
 if command -v systemctl &> /dev/null; then
+    # Reload systemd and reset failed states
+    # systemd 리로드 및 실패 상태 초기화
     systemctl daemon-reload
     systemctl reset-failed vaultctl-renew.service 2>/dev/null || true
     systemctl reset-failed vaultctl-renew.timer 2>/dev/null || true
 
     # If config file exists, enable and start timer
     # 설정 파일이 존재하면 타이머 활성화 및 서비스 실행
-    if [[ -f /etc/vaultctl/config ]]; then
+    if [[ -f "$NEW_CONFIG" ]]; then
         systemctl enable vaultctl-renew.timer 2>/dev/null || true
         systemctl start vaultctl-renew.timer 2>/dev/null || true
         systemctl start vaultctl-renew.service 2>/dev/null || true
     fi
 fi
 
+# ─────────────────────────────────────────────────────────────────────────────
 # Show setup instructions on fresh install (no config file exists)
 # 초기 설치 시 설정 안내 메시지 출력 (설정 파일 없는 경우)
-if [[ ! -f /etc/vaultctl/config ]]; then
+# ─────────────────────────────────────────────────────────────────────────────
+if [[ ! -f "$NEW_CONFIG" ]]; then
     echo ""
     echo "╔═══════════════════════════════════════════════════════════════╗"
     echo "║  vaultctl installed successfully!                             ║"
