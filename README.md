@@ -174,12 +174,12 @@ Commands for daily use in LXC containers.
 | Command | Description |
 |---------|-------------|
 | `vaultctl init` | Initial setup (one-time) |
-| `vaultctl env <name>` | Generate .env file |
+| `vaultctl env <n>` | Generate .env file |
 | `vaultctl status` | Check connection and auth status |
 | `vaultctl config` | Show current configuration |
-| `vaultctl run <name> -- cmd` | Run command with injected env vars |
-| `vaultctl sh <name>` | Generate shell export statements |
-| `vaultctl watch <name> -- cmd` | Auto-restart on secret change |
+| `vaultctl run <n> -- cmd` | Run command with injected env vars |
+| `vaultctl sh <n>` | Generate shell export statements |
+| `vaultctl watch <n> -- cmd` | Auto-restart on secret change |
 | `vaultctl scan` | Scan code for hardcoded secrets |
 | `vaultctl redact` | Mask secrets in logs |
 
@@ -190,24 +190,25 @@ $ vaultctl init
 
 🔐 Setup
 ╭──────────────────────────────────────╮
-│ vaultctl 초기 설정                    │
+│ vaultctl Initial Setup               │
 │                                       │
-│ Vault 연결 및 인증을 설정합니다.        │
-│ 이 설정은 한 번만 하면 됩니다.          │
+│ Configure Vault connection and       │
+│ authentication.                       │
+│ This setup only needs to be done once.│
 ╰──────────────────────────────────────╯
 
-Vault 서버 주소: https://vault.example.com
-✓ 연결 성공
+Vault server address: https://vault.example.com
+✓ Connection successful
 
-AppRole 인증 정보
+AppRole Authentication
 Role ID: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 Secret ID: ********
 
-✓ 인증 성공
+✓ Authentication successful
   Policies: vaultctl, default
-  TTL: 1시간
+  TTL: 1 hour
 
-✓ 설정 저장: ~/.config/vaultctl/
+✓ Configuration saved: ~/.config/vaultctl/
 ```
 
 #### vaultctl env
@@ -228,25 +229,25 @@ vaultctl env lxc-161 --stdout
 ```bash
 $ vaultctl status
 
-vaultctl 상태
+vaultctl Status
 
-1. 설정
+1. Configuration
    Vault: https://vault.example.com
-   KV 경로: proxmox/lxc/
-   설정 디렉토리: ✓ ~/.config/vaultctl
+   KV Path: proxmox/lxc/
+   Config Dir: ✓ ~/.config/vaultctl
 
-2. 연결
-   ✓ Vault 서버 연결됨
+2. Connection
+   ✓ Vault server connected
 
-3. 인증
-   ✓ 인증됨
+3. Authentication
+   ✓ Authenticated
    Policies: vaultctl, default
-   TTL: 58분
+   TTL: 58 minutes
 
-4. 시크릿 접근
-   ✓ 접근 가능 (5개 시크릿)
+4. Secrets Access
+   ✓ Access granted (5 secrets)
 
-✓ 모든 상태 정상
+✓ All checks passed
 ```
 
 ### Admin Commands
@@ -256,9 +257,9 @@ Commands for administrators to manage secrets and infrastructure.
 | Command | Description |
 |---------|-------------|
 | `vaultctl admin list` | List all secrets |
-| `vaultctl admin get <name>` | Get secret details |
-| `vaultctl admin put <name> K=V...` | Store secrets |
-| `vaultctl admin delete <name>` | Delete secret |
+| `vaultctl admin get <n>` | Get secret details |
+| `vaultctl admin put <n> K=V...` | Store secrets |
+| `vaultctl admin delete <n>` | Delete secret |
 | `vaultctl admin import <file>` | Bulk import from JSON |
 | `vaultctl admin export` | Export all to JSON |
 | `vaultctl admin setup vault` | Setup Vault policy and AppRole |

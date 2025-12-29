@@ -2,17 +2,17 @@
 관리자 전용 명령어.
 
 Usage:
-    vaultctl admin setup vault        # Vault policy, AppRole 생성
-    vaultctl admin setup apt-server   # APT 저장소 서버 구축
-    vaultctl admin setup apt-client   # APT 클라이언트 설정
+    vaultctl admin setup vault        # Create Vault policy and AppRole
+    vaultctl admin setup apt-server   # Build APT repository server
+    vaultctl admin setup apt-client   # Configure APT client
     
-    vaultctl admin list               # 시크릿 목록
-    vaultctl admin get <name>         # 시크릿 조회
-    vaultctl admin put <name> K=V     # 시크릿 저장
-    vaultctl admin delete <name>      # 시크릿 삭제
+    vaultctl admin list               # List secrets
+    vaultctl admin get <n>            # Get secret
+    vaultctl admin put <n> K=V        # Store secret
+    vaultctl admin delete <n>         # Delete secret
     
-    vaultctl admin token status       # 토큰 상태
-    vaultctl admin token renew        # 토큰 갱신
+    vaultctl admin token status       # Token status
+    vaultctl admin token renew        # Renew token
 """
 
 import json
@@ -91,8 +91,8 @@ def _get_authenticated_client() -> VaultClient:
         except VaultError:
             pass
     
-    console.print("[red]✗[/red] 인증이 필요합니다.")
-    console.print("  실행: vaultctl init")
+    console.print("[red]✗[/red] Authentication required.")
+    console.print("  Run: vaultctl init")
     raise typer.Exit(1)
 
 
@@ -108,7 +108,7 @@ def _get_secret_path(name: str) -> str:
 
 @app.command("list")
 def list_secrets(
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="상세 정보 출력"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed info / 상세 정보 출력"),
 ):
     """List all secrets / 시크릿 목록 조회.
     
@@ -121,20 +121,20 @@ def list_secrets(
     try:
         items = client.kv_list(settings.kv_mount, settings.kv_lxc_path)
     except VaultError as e:
-        console.print(f"[red]✗[/red] 조회 실패: {e.message}")
+        console.print(f"[red]✗[/red] Failed to list: {e.message}")
         raise typer.Exit(1)
 
     if not items:
-        console.print("[yellow]![/yellow] 등록된 시크릿이 없습니다.")
-        console.print(f"  경로: {settings.kv_mount}/{settings.kv_lxc_path}/")
+        console.print("[yellow]![/yellow] No secrets found.")
+        console.print(f"  Path: {settings.kv_mount}/{settings.kv_lxc_path}/")
         return
 
-    table = Table(title="시크릿 목록", show_header=True, header_style="bold cyan")
-    table.add_column("이름", style="green")
+    table = Table(title="Secrets", show_header=True, header_style="bold cyan")
+    table.add_column("Name", style="green")
 
     if verbose:
-        table.add_column("키 개수", style="white")
-        table.add_column("키 목록", style="dim")
+        table.add_column("Keys", style="white")
+        table.add_column("Key List", style="dim")
 
         for item in sorted(items):
             name = item.rstrip("/")
@@ -145,21 +145,21 @@ def list_secrets(
                     keys = keys[:50] + "..."
                 table.add_row(name, str(len(data)), keys)
             except VaultError:
-                table.add_row(name, "-", "[red]조회 실패[/red]")
+                table.add_row(name, "-", "[red]failed[/red]")
     else:
         for item in sorted(items):
             table.add_row(item.rstrip("/"))
 
     console.print(table)
-    console.print(f"\n총 {len(items)}개")
+    console.print(f"\nTotal: {len(items)}")
 
 
 @app.command("get")
 def get_secret(
-    name: str = typer.Argument(..., help="시크릿 이름 (예: lxc-161)"),
-    field: Optional[str] = typer.Option(None, "--field", "-f", help="특정 필드만 조회"),
-    copy: bool = typer.Option(False, "--copy", "-c", help="값을 클립보드에 복사"),
-    raw: bool = typer.Option(False, "--raw", help="JSON으로 출력"),
+    name: str = typer.Argument(..., help="Secret name (e.g., lxc-161) / 시크릿 이름"),
+    field: Optional[str] = typer.Option(None, "--field", "-f", help="Specific field only / 특정 필드만 조회"),
+    copy: bool = typer.Option(False, "--copy", "-c", help="Copy to clipboard / 클립보드에 복사"),
+    raw: bool = typer.Option(False, "--raw", help="JSON output / JSON으로 출력"),
 ):
     """Get secret / 시크릿 조회.
     
@@ -175,29 +175,29 @@ def get_secret(
         data = client.kv_get(settings.kv_mount, _get_secret_path(name))
     except VaultError as e:
         if e.status_code == 404:
-            console.print(f"[red]✗[/red] 시크릿을 찾을 수 없습니다: {name}")
+            console.print(f"[red]✗[/red] Secret not found: {name}")
         else:
-            console.print(f"[red]✗[/red] 조회 실패: {e.message}")
+            console.print(f"[red]✗[/red] Failed to retrieve: {e.message}")
         raise typer.Exit(1)
 
     if not data:
-        console.print(f"[yellow]![/yellow] 데이터 없음: {name}")
+        console.print(f"[yellow]![/yellow] Secret is empty: {name}")
         raise typer.Exit(1)
 
-    # 특정 필드만 조회
+    # Specific field only
     if field:
         if field not in data:
-            console.print(f"[red]✗[/red] 필드를 찾을 수 없습니다: {field}")
-            console.print(f"  사용 가능: {', '.join(data.keys())}")
+            console.print(f"[red]✗[/red] Field not found: {field}")
+            console.print(f"  Available: {', '.join(data.keys())}")
             raise typer.Exit(1)
 
         value = str(data[field])
 
         if copy:
             if copy_to_clipboard(value):
-                console.print(f"[green]✓[/green] 클립보드에 복사됨: {name}/{field}")
+                console.print(f"[green]✓[/green] Copied to clipboard: {name}/{field}")
             else:
-                console.print(f"[yellow]![/yellow] 클립보드 복사 실패")
+                console.print(f"[yellow]![/yellow] Clipboard copy failed")
                 console.print(value)
         elif raw:
             console.print(value)
@@ -205,7 +205,7 @@ def get_secret(
             console.print(f"[bold]{field}[/bold]: {value}")
         return
 
-    # 전체 조회
+    # Full output
     if raw:
         console.print(json.dumps(data, ensure_ascii=False, indent=2))
     else:
@@ -215,11 +215,11 @@ def get_secret(
 
 @app.command("put")
 def put_secret(
-    name: str = typer.Argument(..., help="시크릿 이름 (예: lxc-161)"),
-    data: list[str] = typer.Argument(..., help="KEY=value 쌍들"),
-    merge: bool = typer.Option(True, "--merge/--replace", help="기존 값과 병합 (기본) / 교체"),
+    name: str = typer.Argument(..., help="Secret name (e.g., lxc-161) / 시크릿 이름"),
+    data: list[str] = typer.Argument(..., help="KEY=value pairs / KEY=value 쌍들"),
+    merge: bool = typer.Option(True, "--merge/--replace", help="Merge with existing (default) / Replace all / 기존 값과 병합 또는 교체"),
 ):
-    """Put secret / 시크릿 저장.
+    """Store secret / 시크릿 저장.
     
     Examples:
         vaultctl admin put lxc-161 DB_HOST=postgres.local DB_PASSWORD=secret
@@ -230,36 +230,36 @@ def put_secret(
     
     new_data = parse_key_value_args(data)
     if not new_data:
-        console.print("[red]✗[/red] KEY=value 형식으로 데이터를 입력하세요.")
-        console.print("  예: vaultctl admin put lxc-161 DB_HOST=localhost DB_PASSWORD=secret")
+        console.print("[red]✗[/red] Provide data in KEY=value format.")
+        console.print("  Example: vaultctl admin put lxc-161 DB_HOST=localhost DB_PASSWORD=secret")
         raise typer.Exit(1)
 
-    # 기존 값과 병합
+    # Merge with existing
     if merge:
         try:
             existing = client.kv_get(settings.kv_mount, _get_secret_path(name))
             existing.update(new_data)
             new_data = existing
         except VaultError:
-            pass  # 새로 생성
+            pass  # Create new
 
     try:
         client.kv_put(settings.kv_mount, _get_secret_path(name), new_data)
-        console.print(f"[green]✓[/green] 저장 완료: {name}")
+        console.print(f"[green]✓[/green] Saved: {name}")
 
-        # 저장된 내용 표시
+        # Show saved content
         table = create_kv_table(new_data, title=f"Secret: {name}")
         console.print(table)
 
     except VaultError as e:
-        console.print(f"[red]✗[/red] 저장 실패: {e.message}")
+        console.print(f"[red]✗[/red] Failed to save: {e.message}")
         raise typer.Exit(1)
 
 
 @app.command("delete")
 def delete_secret(
-    name: str = typer.Argument(..., help="시크릿 이름"),
-    force: bool = typer.Option(False, "--force", "-f", help="확인 없이 삭제"),
+    name: str = typer.Argument(..., help="Secret name / 시크릿 이름"),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation / 확인 없이 삭제"),
 ):
     """Delete secret / 시크릿 삭제.
     
@@ -270,23 +270,23 @@ def delete_secret(
     client = _get_authenticated_client()
     
     if not force:
-        confirm = typer.confirm(f"정말 '{name}'을(를) 삭제하시겠습니까?")
+        confirm = typer.confirm(f"Delete '{name}'?")
         if not confirm:
-            console.print("취소됨")
+            console.print("Cancelled")
             raise typer.Exit(0)
 
     try:
         client.kv_delete(settings.kv_mount, _get_secret_path(name))
-        console.print(f"[green]✓[/green] 삭제 완료: {name}")
+        console.print(f"[green]✓[/green] Deleted: {name}")
     except VaultError as e:
-        console.print(f"[red]✗[/red] 삭제 실패: {e.message}")
+        console.print(f"[red]✗[/red] Failed to delete: {e.message}")
         raise typer.Exit(1)
 
 
 @app.command("import")
 def import_secrets(
-    file: Path = typer.Argument(..., help="JSON 파일 경로"),
-    dry_run: bool = typer.Option(False, "--dry-run", "-n", help="실제 저장 없이 검증만"),
+    file: Path = typer.Argument(..., help="JSON file path / JSON 파일 경로"),
+    dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Validate only, no save / 실제 저장 없이 검증만"),
 ):
     """Import secrets from JSON file / JSON 파일에서 시크릿 일괄 등록.
     
@@ -303,39 +303,39 @@ def import_secrets(
     client = _get_authenticated_client()
     
     if not file.exists():
-        console.print(f"[red]✗[/red] 파일을 찾을 수 없습니다: {file}")
+        console.print(f"[red]✗[/red] File not found: {file}")
         raise typer.Exit(1)
 
     try:
         with open(file) as f:
             data = json.load(f)
     except json.JSONDecodeError as e:
-        console.print(f"[red]✗[/red] JSON 파싱 오류: {e}")
+        console.print(f"[red]✗[/red] JSON parse error: {e}")
         raise typer.Exit(1)
 
-    # _설명 등 메타 필드 제거
+    # Remove meta fields like _description
     data = {k: v for k, v in data.items() if not k.startswith("_")}
 
     if not data:
-        console.print("[yellow]![/yellow] 등록할 시크릿이 없습니다.")
+        console.print("[yellow]![/yellow] No secrets to import.")
         return
 
-    console.print(f"[dim]총 {len(data)}개 시크릿 등록 {'(dry-run)' if dry_run else ''}...[/dim]")
+    console.print(f"[dim]Importing {len(data)} secrets {'(dry-run)' if dry_run else ''}...[/dim]")
 
     success = 0
     failed = 0
 
     for name, secret_data in data.items():
         if not isinstance(secret_data, dict):
-            console.print(f"  [red]✗[/red] {name}: 잘못된 형식")
+            console.print(f"  [red]✗[/red] {name}: invalid format")
             failed += 1
             continue
 
-        # 빈 값 제거
+        # Remove empty values
         secret_data = {k: v for k, v in secret_data.items() if v}
 
         if dry_run:
-            console.print(f"  [dim]○[/dim] {name}: {len(secret_data)}개 필드")
+            console.print(f"  [dim]○[/dim] {name}: {len(secret_data)} fields")
             success += 1
         else:
             try:
@@ -346,12 +346,12 @@ def import_secrets(
                 console.print(f"  [red]✗[/red] {name}: {e.message}")
                 failed += 1
 
-    console.print(f"\n완료: {success}개 성공, {failed}개 실패")
+    console.print(f"\nComplete: {success} succeeded, {failed} failed")
 
 
 @app.command("export")
 def export_secrets(
-    output: Optional[Path] = typer.Option(None, "--output", "-o", help="출력 파일 (생략 시 stdout)"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output file (stdout if omitted) / 출력 파일 (생략 시 stdout)"),
 ):
     """Export all secrets to JSON / 모든 시크릿을 JSON으로 내보내기.
     
@@ -364,11 +364,11 @@ def export_secrets(
     try:
         items = client.kv_list(settings.kv_mount, settings.kv_lxc_path)
     except VaultError as e:
-        console.print(f"[red]✗[/red] 조회 실패: {e.message}")
+        console.print(f"[red]✗[/red] Failed to list: {e.message}")
         raise typer.Exit(1)
 
     if not items:
-        console.print("[yellow]![/yellow] 등록된 시크릿이 없습니다.")
+        console.print("[yellow]![/yellow] No secrets found.")
         return
 
     result = {}
@@ -384,7 +384,7 @@ def export_secrets(
 
     if output:
         output.write_text(json_output)
-        console.print(f"[green]✓[/green] 내보내기 완료: {output}")
+        console.print(f"[green]✓[/green] Exported: {output}")
     else:
         console.print(json_output)
 
@@ -395,32 +395,25 @@ def export_secrets(
 
 
 @setup_app.command("vault")
-def setup_vault():
+def setup_vault(
+    generate_secret: bool = typer.Option(False, "--generate-secret", "-g", help="Generate new Secret ID for existing AppRole / 기존 AppRole에 새 Secret ID 생성"),
+):
     """Setup Vault policy and AppRole / Vault 정책 및 AppRole 생성.
     
     Creates:
         - Policy: vaultctl (read/write to proxmox/*)
-        - AppRole: vaultctl-role
+        - AppRole: vaultctl
     
-    Requires root token or admin privileges.
+    Use --generate-secret to create a new Secret ID for an existing AppRole.
     
     Examples:
-        vaultctl admin setup vault
+        vaultctl admin setup vault                # Full setup
+        vaultctl admin setup vault -g             # Generate new Secret ID only
     """
-    console.print(Panel.fit(
-        "[bold blue]Vault Setup[/bold blue]\n\n"
-        "This will create:\n"
-        "• Policy: vaultctl\n"
-        "• AppRole: vaultctl-role\n"
-        "• KV secrets engine: proxmox/",
-        title="🔐 Vault Setup",
-    ))
-    console.print()
-    
     # Get admin token
     vault_addr = Prompt.ask(
         "Vault server address",
-        default=settings.vault_addr,
+        default=settings.vault_addr if settings.vault_addr != "https://vault.example.com" else None,
     )
     admin_token = Prompt.ask("Root/Admin token", password=True)
     
@@ -435,17 +428,58 @@ def setup_vault():
         console.print(f"[red]✗[/red] Connection failed: {e.message}")
         raise typer.Exit(1)
     
+    kv_mount = settings.kv_mount
+    role_name = "vaultctl"
+    policy_name = "vaultctl"
+    
+    # Generate Secret ID only mode
+    if generate_secret:
+        console.print("\n[bold]Generating new Secret ID...[/bold]")
+        try:
+            # Check if AppRole exists
+            client._request("GET", f"auth/approle/role/{role_name}")
+            
+            # Get Role ID
+            role_id_resp = client._request("GET", f"auth/approle/role/{role_name}/role-id")
+            role_id = role_id_resp.get("data", {}).get("role_id")
+            
+            # Generate new Secret ID
+            secret_id_resp = client._request("POST", f"auth/approle/role/{role_name}/secret-id")
+            secret_id = secret_id_resp.get("data", {}).get("secret_id")
+            
+            console.print(f"\n[yellow]{'─' * 60}[/yellow]")
+            console.print("[yellow]Save these credentials securely![/yellow]")
+            console.print(f"[yellow]{'─' * 60}[/yellow]")
+            console.print(f"\n  Role ID:    {role_id}")
+            console.print(f"  Secret ID:  {secret_id}  [dim](newly generated)[/dim]")
+            console.print(f"\n[yellow]{'─' * 60}[/yellow]")
+            return
+            
+        except VaultError as e:
+            console.print(f"[red]✗[/red] AppRole '{role_name}' not found. Run without -g to create it.")
+            raise typer.Exit(1)
+    
+    # Full setup
+    console.print(Panel.fit(
+        "[bold blue]Vault Setup[/bold blue]\n\n"
+        "This will create:\n"
+        f"• Policy: {policy_name}\n"
+        f"• AppRole: {role_name}\n"
+        f"• KV secrets engine: {kv_mount}/",
+        title="🔐 Vault Setup",
+    ))
+    
     # 1. Enable KV secrets engine
     console.print("\n[bold]1. KV Secrets Engine[/bold]")
-    kv_mount = Prompt.ask("KV mount path", default=settings.kv_mount)
+    kv_mount = Prompt.ask("KV mount path", default=kv_mount)
     
     try:
         # Check if already enabled
-        mounts = client._request("GET", "/sys/mounts")
+        mounts = client._request("GET", "sys/mounts")
         if f"{kv_mount}/" in mounts.get("data", {}):
             console.print(f"   [green]✓[/green] Already enabled: {kv_mount}/")
         else:
-            client._request("POST", f"/sys/mounts/{kv_mount}", json={
+            client._request("POST", f"sys/mounts/{kv_mount}", data={
                 "type": "kv",
                 "options": {"version": "2"},
             })
@@ -455,7 +489,6 @@ def setup_vault():
     
     # 2. Create policy
     console.print("\n[bold]2. Policy[/bold]")
-    policy_name = "vaultctl"
     policy_hcl = f'''
 # vaultctl policy
 # Read/write access to {kv_mount}/*
@@ -478,7 +511,7 @@ path "auth/token/lookup-self" {{
 '''
     
     try:
-        client._request("PUT", f"/sys/policies/acl/{policy_name}", json={
+        client._request("PUT", f"sys/policies/acl/{policy_name}", data={
             "policy": policy_hcl,
         })
         console.print(f"   [green]✓[/green] Created: {policy_name}")
@@ -489,41 +522,49 @@ path "auth/token/lookup-self" {{
     # 3. Enable AppRole auth
     console.print("\n[bold]3. AppRole Auth[/bold]")
     try:
-        auth_methods = client._request("GET", "/sys/auth")
+        auth_methods = client._request("GET", "sys/auth")
         if "approle/" in auth_methods.get("data", {}):
             console.print("   [green]✓[/green] Already enabled: approle/")
         else:
-            client._request("POST", "/sys/auth/approle", json={
+            client._request("POST", "sys/auth/approle", data={
                 "type": "approle",
             })
             console.print("   [green]✓[/green] Enabled: approle/")
     except VaultError as e:
         console.print(f"   [yellow]![/yellow] {e.message}")
     
-    # 4. Create AppRole
+    # 4. Create or update AppRole
     console.print("\n[bold]4. AppRole[/bold]")
-    role_name = "vaultctl"
     
+    approle_exists = False
     try:
-        client._request("POST", f"/auth/approle/role/{role_name}", json={
-            "token_policies": [policy_name],
-            "token_ttl": "1h",
-            "token_max_ttl": "24h",
-            "secret_id_ttl": "0",  # Never expires
-            "secret_id_num_uses": 0,  # Unlimited
-        })
-        console.print(f"   [green]✓[/green] Created: {role_name}")
-    except VaultError as e:
-        console.print(f"   [red]✗[/red] Failed: {e.message}")
-        raise typer.Exit(1)
+        client._request("GET", f"auth/approle/role/{role_name}")
+        approle_exists = True
+        console.print(f"   [green]✓[/green] Already exists: {role_name}")
+    except VaultError:
+        pass
     
-    # 5. Get Role ID and Secret ID
+    if not approle_exists:
+        try:
+            client._request("POST", f"auth/approle/role/{role_name}", data={
+                "token_policies": [policy_name],
+                "token_ttl": "1h",
+                "token_max_ttl": "24h",
+                "secret_id_ttl": "0",  # Never expires
+                "secret_id_num_uses": 0,  # Unlimited
+            })
+            console.print(f"   [green]✓[/green] Created: {role_name}")
+        except VaultError as e:
+            console.print(f"   [red]✗[/red] Failed: {e.message}")
+            raise typer.Exit(1)
+    
+    # 5. Get Role ID and generate Secret ID
     console.print("\n[bold]5. Credentials[/bold]")
     try:
-        role_id_resp = client._request("GET", f"/auth/approle/role/{role_name}/role-id")
+        role_id_resp = client._request("GET", f"auth/approle/role/{role_name}/role-id")
         role_id = role_id_resp.get("data", {}).get("role_id")
         
-        secret_id_resp = client._request("POST", f"/auth/approle/role/{role_name}/secret-id")
+        secret_id_resp = client._request("POST", f"auth/approle/role/{role_name}/secret-id")
         secret_id = secret_id_resp.get("data", {}).get("secret_id")
         
         console.print(f"\n[yellow]{'─' * 60}[/yellow]")
@@ -540,12 +581,10 @@ path "auth/token/lookup-self" {{
     console.print("\n")
     console.print(Panel.fit(
         "[bold green]Setup Complete![/bold green]\n\n"
-        "Use these credentials with:\n"
+        "Distribute credentials to each LXC:\n"
         f"  vaultctl init\n\n"
-        "Or set environment variables:\n"
-        f"  export VAULT_ADDR={vault_addr}\n"
-        f"  export VAULT_ROLE_ID={role_id}\n"
-        f"  export VAULT_SECRET_ID={secret_id}",
+        "Or to generate a new Secret ID later:\n"
+        f"  vaultctl admin setup vault -g",
         title="✓ Complete",
     ))
 
@@ -608,15 +647,15 @@ def token_status():
 
     ttl = data.get("ttl", 0)
     if ttl == 0:
-        table.add_row("TTL", "[green]무제한[/green]")
+        table.add_row("TTL", "[green]unlimited[/green]")
     else:
         remaining = format_duration(ttl)
         if ttl < settings.token_renew_threshold:
-            table.add_row("TTL", f"[yellow]{remaining}[/yellow] (갱신 권장)")
+            table.add_row("TTL", f"[yellow]{remaining}[/yellow] (renewal recommended)")
         else:
             table.add_row("TTL", remaining)
 
-    table.add_row("Renewable", "예" if data.get("renewable", False) else "아니오")
+    table.add_row("Renewable", "Yes" if data.get("renewable", False) else "No")
     
     creation_time = data.get("creation_time", "-")
     if isinstance(creation_time, (int, float)):
@@ -624,7 +663,7 @@ def token_status():
         creation_time = datetime.fromtimestamp(creation_time).strftime("%Y-%m-%d %H:%M:%S")
     table.add_row("Creation Time", str(creation_time))
 
-    console.print(Panel(table, title="토큰 정보", border_style="blue"))
+    console.print(Panel(table, title="Token Info", border_style="blue"))
 
 
 @token_app.command("renew")
@@ -641,16 +680,16 @@ def token_renew():
         auth_data = result.get("auth", {})
         ttl = auth_data.get("lease_duration", 0)
         
-        console.print("[green]✓[/green] 토큰 갱신 완료")
-        console.print(f"  새 TTL: {format_duration(ttl)}")
+        console.print("[green]✓[/green] Token renewed")
+        console.print(f"  New TTL: {format_duration(ttl)}")
         
     except VaultError as e:
         if "not renewable" in e.message.lower():
-            console.print("[yellow]![/yellow] 이 토큰은 갱신할 수 없습니다.")
+            console.print("[yellow]![/yellow] This token is not renewable.")
             
             # Try AppRole re-login
             if settings.has_approle_credentials():
-                console.print("[dim]AppRole로 재인증 중...[/dim]")
+                console.print("[dim]Re-authenticating with AppRole...[/dim]")
                 try:
                     result = client.approle_login(
                         settings.approle_role_id,
@@ -662,10 +701,10 @@ def token_renew():
                         settings.ensure_dirs()
                         settings.token_cache_file.write_text(token)
                         settings.token_cache_file.chmod(0o600)
-                        console.print("[green]✓[/green] AppRole 재인증 성공")
+                        console.print("[green]✓[/green] AppRole re-authentication successful")
                 except VaultError as e2:
-                    console.print(f"[red]✗[/red] 재인증 실패: {e2.message}")
+                    console.print(f"[red]✗[/red] Re-authentication failed: {e2.message}")
                     raise typer.Exit(1)
         else:
-            console.print(f"[red]✗[/red] 갱신 실패: {e.message}")
+            console.print(f"[red]✗[/red] Renewal failed: {e.message}")
             raise typer.Exit(1)
