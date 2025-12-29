@@ -308,12 +308,19 @@ def env_command(
     name: str = typer.Argument(..., help="Secret name (e.g., 100) / 시크릿 이름"),
     output: Path = typer.Option(Path(".env"), "--output", "-o", help="Output file / 출력 파일"),
     stdout: bool = typer.Option(False, "--stdout", help="Output to stdout / stdout으로 출력"),
+    lowercase: bool = typer.Option(False, "--lowercase", "-l", help="Use lowercase keys / 소문자 키 사용"),
+    no_transform: bool = typer.Option(False, "--no-transform", "-n", help="Keep original key names / 원본 키 이름 유지"),
 ):
     """Generate .env file from Vault / Vault에서 .env 파일 생성.
     
+    By default, keys are transformed to UPPER_CASE (hyphens become underscores).
+    기본적으로 키는 대문자로 변환되고 하이픈은 언더바로 변경됩니다.
+    
     \b
     Examples:
-        vaultctl env 100                  # Generate .env file
+        vaultctl env 100                  # Generate .env (UPPER_CASE keys)
+        vaultctl env 100 -l               # Generate .env (lower_case keys)
+        vaultctl env 100 -n               # Keep original key names
         vaultctl env 100 -o prod.env      # Custom filename
         vaultctl env 100 --stdout         # Output to stdout
         
@@ -339,12 +346,27 @@ def env_command(
         console.print(f"[yellow]![/yellow] Secret is empty: {name}")
         raise typer.Exit(1)
 
+    # Transform keys
+    if no_transform:
+        transformed_data = data
+    else:
+        transformed_data = {}
+        for key, value in data.items():
+            # Replace hyphens, dots, spaces with underscores
+            new_key = key.replace("-", "_").replace(".", "_").replace(" ", "_")
+            # Apply case transformation
+            if lowercase:
+                new_key = new_key.lower()
+            else:
+                new_key = new_key.upper()
+            transformed_data[new_key] = value
+
     if stdout:
-        for key, value in sorted(data.items()):
+        for key, value in sorted(transformed_data.items()):
             console.print(f"{key}={value}")
     else:
-        write_env_file(str(output), data, header=f"Generated from Vault: {name}")
-        console.print(f"[green]✓[/green] {output} ({len(data)} variables)")
+        write_env_file(str(output), transformed_data, header=f"Generated from Vault: {name}")
+        console.print(f"[green]✓[/green] {output} ({len(transformed_data)} variables)")
 
 
 @app.command("status")
