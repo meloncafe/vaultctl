@@ -11,9 +11,10 @@ A CLI tool for centrally managing Proxmox LXC container passwords/URLs and Docke
 - [Features](#features)
 - [Architecture](#architecture)
 - [Installation](#installation)
-  - [Option 1: Install from Private APT Server](#option-1-install-from-private-apt-server-recommended)
-  - [Option 2: Install from GitHub](#option-2-install-from-github)
-  - [Option 3: Build from Source](#option-3-build-from-source)
+  - [Option 1: Quick Install from GitHub](#option-1-quick-install-from-github-recommended)
+  - [Option 2: Install from Private APT Server](#option-2-install-from-private-apt-server)
+  - [Option 3: Install from GitHub Releases](#option-3-install-from-github-releases)
+  - [Option 4: Build from Source](#option-4-build-from-source)
 - [Initial Setup](#initial-setup)
 - [Command Usage](#command-usage)
 - [Extended Commands (teller-style)](#extended-commands-teller-style)
@@ -114,7 +115,21 @@ sequenceDiagram
 
 ## Installation
 
-### Option 1: Install from Private APT Server (Recommended)
+### Option 1: Quick Install from GitHub (Recommended)
+
+Install the latest release directly from GitHub with a single command:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/meloncafe/vaultctl/main/scripts/install.sh | sudo bash
+```
+
+Install a specific version:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/meloncafe/vaultctl/main/scripts/install.sh | VERSION=0.0.19 sudo bash
+```
+
+### Option 2: Install from Private APT Server
 
 If you have a private APT repository set up:
 
@@ -151,7 +166,7 @@ sudo apt update
 sudo apt install vaultctl
 ```
 
-### Option 2: Install from GitHub
+### Option 3: Install from GitHub Releases
 
 ```bash
 # Download latest release
@@ -161,7 +176,7 @@ wget https://github.com/YOUR_USERNAME/vaultctl/releases/latest/download/vaultctl
 sudo apt install ./vaultctl_0.1.0_amd64.deb
 ```
 
-### Option 3: Build from Source
+### Option 4: Build from Source
 
 ```bash
 # Clone repository
@@ -836,17 +851,6 @@ Deploying to APT repository...
 
   Clients can update with:
     sudo apt update && sudo apt upgrade vaultctl
-```
-
-### Legacy Commands (Compatibility)
-
-Previous script-style commands still work:
-
-```bash
-apt-repo-add     # -> vaultctl repo add
-apt-repo-list    # -> vaultctl repo list
-apt-repo-remove  # -> vaultctl repo remove
-apt-repo-info    # -> vaultctl repo info
 ```
 
 ### HTTPS Certificate vs GPG Signing Key

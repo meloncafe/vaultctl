@@ -11,9 +11,10 @@ Proxmox LXC 컨테이너의 비밀번호/URL, Docker 환경변수를 Vault로 �
 - [특징](#특징)
 - [아키텍처](#아키텍처)
 - [설치 방법](#설치-방법)
-  - [옵션 1: 개인 APT 서버에서 설치](#옵션-1-개인-apt-서버에서-설치-권장)
-  - [옵션 2: GitHub에서 직접 설치](#옵션-2-github에서-직접-설치)
-  - [옵션 3: 소스에서 빌드](#옵션-3-소스에서-빌드)
+  - [옵션 1: GitHub에서 바로 설치](#옵션-1-github에서-바로-설치-권장)
+  - [옵션 2: 개인 APT 서버에서 설치](#옵션-2-개인-apt-서버에서-설치)
+  - [옵션 3: GitHub Releases에서 직접 설치](#옵션-3-github-releases에서-직접-설치)
+  - [옵션 4: 소스에서 빌드](#옵션-4-소스에서-빌드)
 - [초기 설정](#초기-설정)
 - [명령어 사용법](#명령어-사용법)
 - [확장 명령어 (teller 스타일)](#확장-명령어-teller-스타일)
@@ -114,7 +115,21 @@ sequenceDiagram
 
 ## 설치 방법
 
-### 옵션 1: 개인 APT 서버에서 설치 (권장)
+### 옵션 1: GitHub에서 바로 설치 (권장)
+
+GitHub에서 최신 릴리스를 한 번에 설치:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/meloncafe/vaultctl/main/scripts/install.sh | sudo bash
+```
+
+특정 버전 설치:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/meloncafe/vaultctl/main/scripts/install.sh | VERSION=0.0.19 sudo bash
+```
+
+### 옵션 2: 개인 APT 서버에서 설치
 
 개인 서버에 APT 저장소가 구축되어 있는 경우:
 
@@ -151,7 +166,7 @@ sudo apt update
 sudo apt install vaultctl
 ```
 
-### 옵션 2: GitHub에서 직접 설치
+### 옵션 3: GitHub Releases에서 직접 설치
 
 ```bash
 # 최신 릴리스 다운로드
@@ -161,7 +176,7 @@ wget https://github.com/YOUR_USERNAME/vaultctl/releases/latest/download/vaultctl
 sudo apt install ./vaultctl_0.1.0_amd64.deb
 ```
 
-### 옵션 3: 소스에서 빌드
+### 옵션 4: 소스에서 빌드
 
 ```bash
 # 저장소 클론
@@ -836,17 +851,6 @@ Deploying to APT repository...
 
   Clients can update with:
     sudo apt update && sudo apt upgrade vaultctl
-```
-
-### 레거시 명령어 (호환성)
-
-이전 스크립트 방식 명령어도 계속 사용 가능:
-
-```bash
-apt-repo-add     # -> vaultctl repo add
-apt-repo-list    # -> vaultctl repo list
-apt-repo-remove  # -> vaultctl repo remove
-apt-repo-info    # -> vaultctl repo info
 ```
 
 ### HTTPS 인증서 vs GPG 서명 키

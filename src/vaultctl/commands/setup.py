@@ -835,9 +835,6 @@ def _apt_full_install(config: dict, web_server: str) -> None:
     else:
         _setup_nginx(config)
     
-    # Create management scripts / 관리 스크립트 생성
-    _create_apt_scripts()
-    
     # Create client scripts / 클라이언트 스크립트 생성
     _create_client_files(config)
 
@@ -1174,34 +1171,6 @@ def _setup_nginx(config: dict) -> None:
     subprocess.run(["systemctl", "enable", "nginx"], check=True)
     subprocess.run(["systemctl", "restart", "nginx"], check=True)
     console.print(f"[green]✓[/green] Nginx configured (port {listen_port})")
-
-
-def _create_apt_scripts() -> None:
-    """Create APT management scripts / APT 관리 스크립트 생성."""
-    console.print("\n[bold]Creating management scripts...[/bold]")
-    
-    scripts = {
-        "apt-repo-add": """#!/bin/bash
-exec vaultctl repo add "$@"
-""",
-        "apt-repo-remove": """#!/bin/bash
-exec vaultctl repo remove "$@"
-""",
-        "apt-repo-list": """#!/bin/bash
-exec vaultctl repo list "$@"
-""",
-        "apt-repo-info": """#!/bin/bash
-exec vaultctl repo info "$@"
-""",
-    }
-    
-    for name, content in scripts.items():
-        path = Path(f"/usr/local/bin/{name}")
-        path.write_text(content)
-        path.chmod(0o755)
-    
-    console.print("[green]✓[/green] Management scripts created")
-    console.print("  apt-repo-add / apt-repo-remove / apt-repo-list / apt-repo-info")
 
 
 def _create_client_files(config: dict) -> None:
