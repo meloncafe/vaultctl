@@ -199,7 +199,12 @@ def _show_token_info(client: VaultClient, token_info: Optional[dict] = None) -> 
             table.add_row("TTL", remaining)
 
     table.add_row("Renewable", "예" if data.get("renewable", False) else "아니오")
-    table.add_row("Creation Time", data.get("creation_time", "-"))
+    
+    creation_time = data.get("creation_time", "-")
+    if isinstance(creation_time, (int, float)):
+        from datetime import datetime
+        creation_time = datetime.fromtimestamp(creation_time).strftime("%Y-%m-%d %H:%M:%S")
+    table.add_row("Creation Time", str(creation_time))
 
     console.print(Panel(table, title="토큰 정보", border_style="blue"))
 
