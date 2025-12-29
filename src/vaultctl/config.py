@@ -2,10 +2,73 @@
 
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional, Tuple, Type
 
 from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
+
+
+# System config file path / 시스템 설정 파일 경로
+SYSTEM_CONFIG_FILE = Path("/etc/vaultctl/config")
+
+
+def _load_system_config() -> dict[str, str]:
+    """Load /etc/vaultctl/config file / /etc/vaultctl/config 파일 로드.
+    
+    Maps VAULT_* variables to settings fields:
+    - VAULT_ADDR -> vault_addr
+    - VAULT_TOKEN -> vault_token
+    - VAULT_ROLE_ID -> approle_role_id
+    - VAULT_SECRET_ID -> approle_secret_id
+    """
+    config = {}
+    
+    if not SYSTEM_CONFIG_FILE.exists():
+        return config
+    
+    try:
+        content = SYSTEM_CONFIG_FILE.read_text()
+        for line in content.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" not in line:
+                continue
+            
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            
+            # Map VAULT_* to settings field names
+            mapping = {
+                "VAULT_ADDR": "vault_addr",
+                "VAULT_TOKEN": "vault_token",
+                "VAULT_NAMESPACE": "vault_namespace",
+                "VAULT_ROLE_ID": "approle_role_id",
+                "VAULT_SECRET_ID": "approle_secret_id",
+            }
+            
+            if key in mapping:
+                config[mapping[key]] = value
+    except Exception:
+        pass
+    
+    return config
+
+
+class SystemConfigSource(PydanticBaseSettingsSource):
+    """Custom settings source for /etc/vaultctl/config."""
+    
+    def get_field_value(
+        self, field: Any, field_name: str
+    ) -> Tuple[Any, str, bool]:
+        config = _load_system_config()
+        if field_name in config:
+            return config[field_name], field_name, False
+        return None, field_name, False
+    
+    def __call__(self) -> dict[str, Any]:
+        return _load_system_config()
 
 
 class Settings(BaseSettings):
@@ -105,6 +168,32 @@ class Settings(BaseSettings):
     def has_approle_credentials(self) -> bool:
         """AppRole 자격 증명이 있는지 확인."""
         return bool(self.approle_role_id and self.approle_secret_id)
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: Type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> Tuple[PydanticBaseSettingsSource, ...]:
+        """Customize settings sources.
+        
+        Priority (highest to lowest):
+        1. init_settings (passed to constructor)
+        2. env_settings (environment variables)
+        3. dotenv_settings (.env file)
+        4. system_config (/etc/vaultctl/config)
+        5. file_secret_settings (secrets directory)
+        """
+        return (
+            init_settings,
+            env_settings,
+            dotenv_settings,
+            SystemConfigSource(settings_cls),
+            file_secret_settings,
+        )
 
 
 # 전역 설정 인스턴스
