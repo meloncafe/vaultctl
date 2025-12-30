@@ -70,6 +70,20 @@ jobs:
           poetry build
           poetry run pip install dist/*.whl --force-reinstall
 
+      # Debug: verify vaultctl installation
+      - name: Verify vaultctl installation
+        run: |
+          echo "=== Installed vaultctl location ==="
+          poetry run python -c "import vaultctl; print(vaultctl.__file__)"
+          echo "=== Installed vaultctl.commands ==="
+          poetry run python -c "import vaultctl.commands; print(vaultctl.commands.__file__)"
+          echo "=== Installed vaultctl.commands.admin ==="
+          poetry run python -c "import vaultctl.commands.admin; print(vaultctl.commands.admin.__file__)"
+          echo "=== List site-packages/vaultctl ==="
+          ls -la $(poetry run python -c "import vaultctl; import os; print(os.path.dirname(vaultctl.__file__))")
+          echo "=== List site-packages/vaultctl/commands ==="
+          ls -la $(poetry run python -c "import vaultctl; import os; print(os.path.dirname(vaultctl.__file__))")/commands/
+
       # Determine version from tag or manual input
       # 태그 또는 수동 입력에서 버전 결정
       - name: Get version
@@ -94,6 +108,34 @@ jobs:
       # spec 파일을 사용하여 PyInstaller로 독립 실행 바이너리 빌드
       - name: Build binary
         run: poetry run pyinstaller --clean --noconfirm vaultctl.spec
+
+      # Debug: check PYZ contents
+      - name: Check PYZ contents
+        run: |
+          echo "=== Checking vaultctl modules in PYZ archive ==="
+          poetry run python -c "
+import zipfile
+import os
+
+# Find PYZ file
+pyz_path = 'build/vaultctl/PYZ-00.pyz'
+if os.path.exists(pyz_path):
+    print(f'PYZ file found: {pyz_path}')
+    with zipfile.ZipFile(pyz_path, 'r') as z:
+        vaultctl_modules = [n for n in z.namelist() if 'vaultctl' in n]
+        print(f'vaultctl modules in PYZ ({len(vaultctl_modules)}):')
+        for m in sorted(vaultctl_modules):
+            print(f'  {m}')
+else:
+    print('PYZ file not found')
+    print('Available files in build/vaultctl:')
+    for f in os.listdir('build/vaultctl'):
+        print(f'  {f}')
+"
+          echo "=== Checking compiled pyc files ==="
+          find build/vaultctl -name "*.pyc" | grep -i vaultctl | head -20 || echo "No pyc files found"
+          echo "=== Testing binary ==="
+          ./dist/vaultctl --help || echo "Binary test failed"
 
       # Create package directory structure
       # 패키지 디렉토리 구조 생성
