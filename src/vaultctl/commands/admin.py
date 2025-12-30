@@ -47,10 +47,6 @@ token_app = typer.Typer(help="Token management / 토큰 관리")
 app.add_typer(setup_app, name="setup")
 app.add_typer(token_app, name="token")
 
-# Import repo commands
-from vaultctl.commands import repo
-app.add_typer(repo.app, name="repo", help="APT package management / APT 패키지 관리")
-
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Helper Functions
