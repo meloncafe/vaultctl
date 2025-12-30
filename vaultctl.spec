@@ -3,6 +3,7 @@
 
 import sys
 from pathlib import Path
+from PyInstaller.utils.hooks import collect_submodules
 
 block_cipher = None
 
@@ -10,36 +11,10 @@ block_cipher = None
 src_path = Path("src")
 templates_path = src_path / "vaultctl" / "templates"
 
-# Manually collect all vaultctl modules from src/
-# src/에서 모든 vaultctl 모듈을 수동으로 수집
-def collect_vaultctl_modules():
-    """Scan src/vaultctl for all Python modules."""
-    modules = []
-    vaultctl_path = src_path / "vaultctl"
-    
-    for py_file in vaultctl_path.rglob("*.py"):
-        # Convert path to module name
-        # e.g., src/vaultctl/commands/admin.py -> vaultctl.commands.admin
-        rel_path = py_file.relative_to(src_path)
-        parts = list(rel_path.parts)
-        
-        # Remove .py extension
-        parts[-1] = parts[-1][:-3]
-        
-        # Skip __pycache__ and __init__
-        if "__pycache__" in parts:
-            continue
-        if parts[-1] == "__init__":
-            parts = parts[:-1]
-        
-        if parts:
-            module_name = ".".join(parts)
-            modules.append(module_name)
-    
-    return modules
-
-vaultctl_modules = collect_vaultctl_modules()
-print(f"Collected vaultctl modules: {vaultctl_modules}")
+# Collect all vaultctl submodules from installed package
+# 설치된 패키지에서 모든 vaultctl 하위 모듈 수집
+vaultctl_imports = collect_submodules('vaultctl')
+print(f"Collected vaultctl modules: {vaultctl_imports}")
 
 a = Analysis(
     [str(src_path / "vaultctl" / "__main__.py")],
@@ -49,7 +24,7 @@ a = Analysis(
         # Include Jinja2 templates / Jinja2 템플릿 포함
         (str(templates_path), "vaultctl/templates"),
     ],
-    hiddenimports=vaultctl_modules + [
+    hiddenimports=vaultctl_imports + [
         # 외부 의존성
         "typer",
         "rich",
