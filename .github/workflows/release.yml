@@ -83,17 +83,10 @@ jobs:
           sed -i "s/^version = .*/version = \"${{ steps.version.outputs.version }}\"/" pyproject.toml
           sed -i "s/__version__ = .*/__version__ = \"${{ steps.version.outputs.version }}\"/" src/vaultctl/__init__.py
 
-      # Build standalone binary with PyInstaller
-      # PyInstaller로 독립 실행 바이너리 빌드
+      # Build standalone binary with PyInstaller using spec file
+      # spec 파일을 사용하여 PyInstaller로 독립 실행 바이너리 빌드
       - name: Build binary
-        run: |
-          poetry run pyinstaller \
-            --clean \
-            --noconfirm \
-            --onefile \
-            --name vaultctl \
-            --strip \
-            src/vaultctl/cli.py
+        run: poetry run pyinstaller --clean --noconfirm vaultctl.spec
 
       # Create package directory structure
       # 패키지 디렉토리 구조 생성
