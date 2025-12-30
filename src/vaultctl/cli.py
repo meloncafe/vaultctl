@@ -23,7 +23,7 @@ from rich.prompt import Prompt
 from rich.table import Table
 
 from vaultctl import __version__
-from vaultctl.commands import admin, compose, extended, repo
+from vaultctl.commands import admin, extended
 from vaultctl.config import settings
 from vaultctl.utils import format_duration, write_env_file
 from vaultctl.vault_client import VaultClient, VaultError
@@ -38,8 +38,6 @@ console = Console()
 
 # Sub-commands
 app.add_typer(admin.app, name="admin", help="Administrator commands / 관리자 명령어")
-app.add_typer(compose.app, name="compose", help="Docker Compose integration / Docker Compose 통합")
-admin.app.add_typer(repo.app, name="repo", help="APT package management / APT 패키지 관리")
 
 # Extended commands (user-facing)
 app.command("run")(extended.run_command)
