@@ -109,7 +109,7 @@ def list_secrets(
 
 
 def get_secret(
-    name: str = typer.Argument(..., help="Secret name (e.g., 100)"),
+    name: str = typer.Argument(..., help="Secret name (e.g., 001)"),
     field: Optional[str] = typer.Option(None, "--field", "-f", help="Specific field only"),
     copy: bool = typer.Option(False, "--copy", "-c", help="Copy to clipboard"),
     raw: bool = typer.Option(False, "--raw", help="JSON output"),
@@ -160,7 +160,7 @@ def get_secret(
 
 
 def put_secret(
-    name: str = typer.Argument(..., help="Secret name (e.g., 100)"),
+    name: str = typer.Argument(..., help="Secret name (e.g., 001)"),
     data: list[str] = typer.Argument(..., help="KEY=value pairs"),
     merge: bool = typer.Option(True, "--merge/--replace", help="Merge with existing (default)"),
 ):
@@ -171,7 +171,7 @@ def put_secret(
     new_data = parse_key_value_args(data)
     if not new_data:
         console.print("[red]✗[/red] Provide data in KEY=value format.")
-        console.print("  Example: vaultctl admin put 100 DB_HOST=localhost DB_PASSWORD=secret")
+        console.print("  Example: vaultctl admin put 001 DB_HOST=localhost DB_PASSWORD=secret")
         raise typer.Exit(1)
 
     if merge:

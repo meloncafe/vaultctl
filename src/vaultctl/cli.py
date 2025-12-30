@@ -128,24 +128,24 @@ def main(
     \b
     Quick Start:
         vaultctl init              # Initial setup (one-time)
-        vaultctl env 100           # Generate .env file
+        vaultctl env 001           # Generate .env file
         docker compose up -d       # Run
     
     \b
     Docker Compose:
-        vaultctl compose init 100            # Setup compose + secrets
-        vaultctl compose up 100              # Sync secrets & start
-        vaultctl compose restart 100         # Sync & restart
+        vaultctl compose init 001            # Setup compose + secrets
+        vaultctl compose up 001              # Sync secrets & start
+        vaultctl compose restart 001         # Sync & restart
     
     \b
     Advanced:
-        vaultctl run 100 -- node app.js       # Run with injected env vars
-        vaultctl watch 100 -- docker compose up  # Auto-restart
+        vaultctl run 001 -- node app.js       # Run with injected env vars
+        vaultctl watch 001 -- docker compose up  # Auto-restart
     
     \b
     Administrator:
         vaultctl admin list        # List secrets
-        vaultctl admin put 100 DB_HOST=localhost
+        vaultctl admin put 001 DB_HOST=localhost
         vaultctl admin setup vault # Initial Vault setup
     """
     if version:
@@ -321,7 +321,7 @@ VAULT_SECRET_ID={secret_id}
     # Ask for secret name
     if not secret_name:
         secret_name = Prompt.ask(
-            "Secret name (e.g., 163, myapp)",
+            "Secret name (e.g., 001, myapp)",
             default=hostname.split("-")[-1] if "-" in hostname else hostname,
         )
     
@@ -452,7 +452,7 @@ VAULT_SECRET_ID={secret_id}
 
 @app.command("env")
 def env_command(
-    name: str = typer.Argument(..., help="Secret name (e.g., 100)"),
+    name: str = typer.Argument(..., help="Secret name (e.g., 001)"),
     output: Path = typer.Option(Path(".env"), "--output", "-o", help="Output file"),
     stdout: bool = typer.Option(False, "--stdout", help="Output to stdout"),
     lowercase: bool = typer.Option(False, "--lowercase", "-l", help="Use lowercase keys"),
