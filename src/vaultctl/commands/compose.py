@@ -19,13 +19,13 @@ from pathlib import Path
 from typing import Optional, List, Tuple
 
 import typer
-from jinja2 import Environment, PackageLoader
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Prompt, Confirm
 from ruamel.yaml import YAML
 
 from vaultctl.config import settings
+from vaultctl.templates import render_template
 from vaultctl.utils import write_env_file
 from vaultctl.vault_client import VaultClient, VaultError
 
@@ -35,12 +35,6 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 console = Console()
-
-# Jinja2 environment for templates
-_jinja_env = Environment(
-    loader=PackageLoader("vaultctl", "templates/compose"),
-    keep_trailing_newline=True,
-)
 
 # YAML parser (preserves comments)
 _yaml = YAML()
@@ -246,14 +240,12 @@ def _render_ctl_script(
     docker_cmd: List[str],
 ) -> str:
     """Render ctl.sh script from template / 템플릿에서 ctl.sh 스크립트 렌더링."""
-    template = _jinja_env.get_template("ctl.sh.j2")
-    return template.render(
-        compose_file=compose_file.name,
-        secret_name=secret_name,
-        secrets_file=secrets_file,
-        docker_cmd=" ".join(docker_cmd),
-        generated_at=datetime.now().isoformat(),
-    )
+    return render_template("compose/ctl.sh.j2", {
+        "compose_file": compose_file.name,
+        "secret_name": secret_name,
+        "secrets_file": secrets_file,
+        "docker_cmd": " ".join(docker_cmd),
+    })
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
