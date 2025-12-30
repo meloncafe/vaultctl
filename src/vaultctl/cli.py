@@ -41,11 +41,11 @@ from vaultctl.commands.extended import run_command, shell_export, scan_secrets, 
 app.add_typer(admin_app, name="admin", help="Administrator commands / 관리자 명령어")
 
 # Extended commands (user-facing)
-app.command("run")(extended.run_command)
-app.command("sh")(extended.shell_export)
-app.command("scan")(extended.scan_secrets)
-app.command("redact")(extended.redact_secrets)
-app.command("watch")(extended.watch_and_restart)
+app.command("run")(run_command)
+app.command("sh")(shell_export)
+app.command("scan")(scan_secrets)
+app.command("redact")(redact_secrets)
+app.command("watch")(watch_and_restart)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
