@@ -161,6 +161,80 @@ class VaultClient:
         except httpx.RequestError as e:
             raise VaultError(f"AppRole 로그인 연결 실패: {e}") from e
 
+    def approle_read_role(self, role_name: str, mount: str = "approle") -> dict[str, Any]:
+        """AppRole 설정 조회.
+
+        Args:
+            role_name: AppRole 이름
+            mount: AppRole 인증 마운트 경로
+
+        Returns:
+            AppRole 설정 정보
+        """
+        result = self._request("GET", f"auth/{mount}/role/{role_name}")
+        return result.get("data", {})
+
+    def approle_list_roles(self, mount: str = "approle") -> list[str]:
+        """AppRole 목록 조회.
+
+        Args:
+            mount: AppRole 인증 마운트 경로
+
+        Returns:
+            AppRole 이름 목록
+        """
+        try:
+            result = self._request("LIST", f"auth/{mount}/role")
+            return result.get("data", {}).get("keys", [])
+        except VaultError as e:
+            if e.status_code == 404:
+                return []
+            raise
+
+    def approle_get_role_id(self, role_name: str, mount: str = "approle") -> str:
+        """AppRole Role ID 조회.
+
+        Args:
+            role_name: AppRole 이름
+            mount: AppRole 인증 마운트 경로
+
+        Returns:
+            Role ID 문자열
+        """
+        result = self._request("GET", f"auth/{mount}/role/{role_name}/role-id")
+        return result.get("data", {}).get("role_id", "")
+
+    def approle_generate_secret_id(
+        self,
+        role_name: str,
+        mount: str = "approle",
+        metadata: Optional[dict[str, str]] = None,
+        ttl: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """AppRole Secret ID 생성.
+
+        Args:
+            role_name: AppRole 이름
+            mount: AppRole 인증 마운트 경로
+            metadata: Secret ID에 부여할 메타데이터
+            ttl: Secret ID TTL (예: "24h", "7d")
+
+        Returns:
+            secret_id, secret_id_accessor 포함
+        """
+        data: dict[str, Any] = {}
+        if metadata:
+            data["metadata"] = metadata
+        if ttl:
+            data["ttl"] = ttl
+
+        result = self._request(
+            "POST",
+            f"auth/{mount}/role/{role_name}/secret-id",
+            data=data if data else None,
+        )
+        return result.get("data", {})
+
     # ─────────────────────────────────────────────────────────────────────────
     # KV v2 Secrets Engine
     # ─────────────────────────────────────────────────────────────────────────

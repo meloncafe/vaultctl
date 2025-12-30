@@ -13,8 +13,8 @@ Usage (User):
 Usage (Admin):
     vaultctl admin ...         # Administrator commands
 """
+import socket
 from pathlib import Path
-from typing import Optional
 
 import typer
 from rich.console import Console
@@ -143,78 +143,82 @@ def main(
 
 
 @app.command("init")
-def init_command():
+def init_command(
+    role_name: str = typer.Option("vaultctl", "--role", "-r", help="AppRole name / AppRole 이름"),
+):
     """Initialize vaultctl (one-time setup) / 초기 설정 (한 번만).
     
-    Configures Vault connection and AppRole authentication.
-    Configuration saved to ~/.config/vaultctl/
+    Connects to Vault with admin token and automatically generates
+    AppRole credentials for this machine.
+    Admin 토큰으로 Vault에 연결하고 이 머신용 AppRole 자격 증명을 자동 생성합니다.
+    
+    \b
+    Prerequisites:
+        - AppRole must be created first on admin workstation:
+          vaultctl admin setup vault
     
     \b
     Examples:
-        vaultctl init
+        vaultctl init                  # Use default AppRole 'vaultctl'
+        vaultctl init -r myapp         # Use custom AppRole name
     """
     console.print(Panel.fit(
         "[bold blue]vaultctl Initial Setup[/bold blue]\n\n"
-        "Configure Vault connection and authentication.\n"
-        "This setup only needs to be done once.",
+        "Connect to Vault and generate AppRole credentials.\n"
+        "Requires admin token to generate Secret ID.",
         title="🔐 Setup",
     ))
     console.print()
     
-    # 1. Vault address - use existing if valid
+    # 1. Vault address
     current_addr = settings.vault_addr
     has_valid_addr = current_addr and current_addr != "https://vault.example.com"
     
-    if has_valid_addr:
-        # Test existing connection
-        console.print(f"[dim]Using configured Vault: {current_addr}[/dim]")
-        client = VaultClient(addr=current_addr)
-        health = client.health()
-        
-        if health.get("initialized") and not health.get("sealed"):
-            console.print(f"[green]✓[/green] Connected to {current_addr}")
-            vault_addr = current_addr
-        else:
-            # Ask for new address
-            vault_addr = Prompt.ask("Vault server address", default=current_addr)
-            client = VaultClient(addr=vault_addr)
-            health = client.health()
-            
-            if not health.get("initialized"):
-                console.print("[red]✗[/red] Cannot connect to Vault server.")
-                raise typer.Exit(1)
-            
-            if health.get("sealed"):
-                console.print("[red]✗[/red] Vault server is sealed.")
-                raise typer.Exit(1)
-            
-            console.print("[green]✓[/green] Connection successful")
-    else:
-        # No valid address configured
-        vault_addr = Prompt.ask("Vault server address")
-        
-        if not vault_addr:
-            console.print("[red]✗[/red] Vault address is required.")
-            raise typer.Exit(1)
-        
-        # Test connection
-        console.print(f"\n[dim]Testing connection...[/dim]")
-        client = VaultClient(addr=vault_addr)
-        health = client.health()
-        
-        if not health.get("initialized"):
-            console.print("[red]✗[/red] Cannot connect to Vault server.")
-            raise typer.Exit(1)
-        
-        if health.get("sealed"):
-            console.print("[red]✗[/red] Vault server is sealed.")
-            raise typer.Exit(1)
-        
-        console.print("[green]✓[/green] Connection successful")
+    vault_addr = Prompt.ask(
+        "Vault server address",
+        default=current_addr if has_valid_addr else None,
+    )
     
-    # 2. KV path settings
+    if not vault_addr:
+        console.print("[red]✗[/red] Vault address is required.")
+        raise typer.Exit(1)
+    
+    # Test connection
+    console.print(f"\n[dim]Connecting to {vault_addr}...[/dim]")
+    client = VaultClient(addr=vault_addr)
+    health = client.health()
+    
+    if not health.get("initialized"):
+        console.print("[red]✗[/red] Cannot connect to Vault server.")
+        raise typer.Exit(1)
+    
+    if health.get("sealed"):
+        console.print("[red]✗[/red] Vault server is sealed.")
+        raise typer.Exit(1)
+    
+    console.print("[green]✓[/green] Connection successful")
+    
+    # 2. Admin token for Secret ID generation
+    console.print("\n[bold]Admin Authentication[/bold]")
+    console.print("[dim]Admin token is required to generate Secret ID for this machine.[/dim]")
+    
+    admin_token = Prompt.ask("Admin/Root token", password=True)
+    
+    if not admin_token:
+        console.print("[red]✗[/red] Admin token is required.")
+        raise typer.Exit(1)
+    
+    # Test admin token
+    admin_client = VaultClient(addr=vault_addr, token=admin_token)
+    try:
+        admin_client.token_lookup()
+        console.print("[green]✓[/green] Admin authentication successful")
+    except VaultError as e:
+        console.print(f"[red]✗[/red] Admin authentication failed: {e.message}")
+        raise typer.Exit(1)
+    
+    # 3. KV path settings
     console.print("\n[bold]KV Secret Path[/bold]")
-    console.print("[dim]Get these values from your administrator.[/dim]")
     
     current_kv_mount = settings.kv_mount if settings.kv_mount != "kv" else None
     current_kv_path = settings.kv_path if settings.kv_path != "proxmox/lxc" else None
@@ -224,23 +228,59 @@ def init_command():
         default=current_kv_mount or "kv",
     )
     kv_path = Prompt.ask(
-        "Secret path (e.g., proxmox/lxc)",
+        "Secret path",
         default=current_kv_path or "proxmox/lxc",
     )
     
-    # 3. AppRole credentials
-    console.print("\n[bold]AppRole Authentication[/bold]")
-    console.print("[dim]Get Role ID and Secret ID from your administrator.[/dim]")
+    # Remove leading/trailing slashes
+    kv_path = kv_path.strip("/")
     
-    role_id = Prompt.ask("Role ID")
-    secret_id = Prompt.ask("Secret ID", password=True)
+    # 4. AppRole name (allow change)
+    console.print(f"\n[bold]AppRole[/bold]")
+    role_name = Prompt.ask("AppRole name", default=role_name)
     
-    if not role_id or not secret_id:
-        console.print("[red]✗[/red] Both Role ID and Secret ID are required.")
+    # 5. Check AppRole exists
+    console.print(f"\n[dim]Checking AppRole '{role_name}'...[/dim]")
+    
+    try:
+        role_info = admin_client.approle_read_role(role_name)
+        policies = role_info.get("token_policies", [])
+        console.print(f"[green]✓[/green] AppRole found: {role_name}")
+        console.print(f"   [dim]Policies: {', '.join(policies)}[/dim]")
+    except VaultError as e:
+        console.print(f"[red]✗[/red] AppRole '{role_name}' not found.")
+        console.print("\n  First run on admin workstation:")
+        console.print("    vaultctl admin setup vault")
         raise typer.Exit(1)
     
-    # 4. Test AppRole login
-    console.print("\n[dim]Testing authentication...[/dim]")
+    # 6. Get Role ID
+    try:
+        role_id = admin_client.approle_get_role_id(role_name)
+        console.print(f"[green]✓[/green] Role ID retrieved")
+    except VaultError as e:
+        console.print(f"[red]✗[/red] Failed to get Role ID: {e.message}")
+        raise typer.Exit(1)
+    
+    # 7. Generate new Secret ID for this machine
+    hostname = socket.gethostname()
+    console.print(f"\n[dim]Generating Secret ID for {hostname}...[/dim]")
+    
+    try:
+        secret_data = admin_client.approle_generate_secret_id(
+            role_name=role_name,
+            metadata={
+                "generated_by": "vaultctl init",
+                "hostname": hostname,
+            },
+        )
+        secret_id = secret_data.get("secret_id", "")
+        console.print(f"[green]✓[/green] Secret ID generated")
+    except VaultError as e:
+        console.print(f"[red]✗[/red] Failed to generate Secret ID: {e.message}")
+        raise typer.Exit(1)
+    
+    # 8. Test AppRole login with generated credentials
+    console.print("\n[dim]Testing AppRole authentication...[/dim]")
     try:
         result = client.approle_login(role_id, secret_id, settings.approle_mount)
         token = result.get("auth", {}).get("client_token")
@@ -249,29 +289,29 @@ def init_command():
             console.print("[red]✗[/red] Authentication failed: no token received.")
             raise typer.Exit(1)
         
-        console.print("[green]✓[/green] Authentication successful")
+        console.print("[green]✓[/green] AppRole authentication successful")
         
         auth_data = result.get("auth", {})
-        console.print(f"  Policies: {', '.join(auth_data.get('policies', []))}")
+        console.print(f"   Policies: {', '.join(auth_data.get('policies', []))}")
         ttl = auth_data.get("lease_duration", 0)
-        console.print(f"  TTL: {format_duration(ttl)}")
+        console.print(f"   TTL: {format_duration(ttl)}")
         
     except VaultError as e:
-        console.print(f"[red]✗[/red] Authentication failed: {e.message}")
+        console.print(f"[red]✗[/red] AppRole authentication failed: {e.message}")
         raise typer.Exit(1)
     
-    # 5. Test secret access
+    # 9. Test secret access
     console.print("\n[dim]Testing secret access...[/dim]")
     test_client = VaultClient(addr=vault_addr, token=token)
     try:
-        test_client.kv_list(kv_mount, kv_path)
-        console.print(f"[green]✓[/green] Access to {kv_mount}/{kv_path}/ confirmed")
+        items = test_client.kv_list(kv_mount, kv_path)
+        console.print(f"[green]✓[/green] Access to {kv_mount}/{kv_path}/ ({len(items) if items else 0} secrets)")
     except VaultError as e:
-        console.print(f"[yellow]![/yellow] Warning: Cannot access {kv_mount}/{kv_path}/")
-        console.print(f"  {e.message}")
-        console.print("  Check your policy configuration.")
+        console.print(f"[yellow]![/yellow] Warning: Cannot list {kv_mount}/{kv_path}/")
+        console.print(f"   {e.message}")
+        console.print("   This may be normal if no secrets exist yet.")
     
-    # 6. Save configuration
+    # 10. Save configuration
     console.print("\n[dim]Saving configuration...[/dim]")
     
     try:
@@ -280,6 +320,7 @@ def init_command():
         # Save config
         config_file = settings.config_dir / "config"
         config_file.write_text(f"""# vaultctl configuration
+# Generated on {hostname}
 VAULT_ADDR={vault_addr}
 VAULT_KV_MOUNT={kv_mount}
 VAULT_KV_PATH={kv_path}
@@ -296,17 +337,17 @@ VAULT_SECRET_ID={secret_id}
         
     except PermissionError as e:
         console.print(f"[yellow]![/yellow] Failed to save configuration: {e}")
-        console.print("  Token is only kept in memory.")
     
-    # 7. Done
+    # 11. Done
     console.print("\n")
     console.print(Panel.fit(
         "[bold green]Setup Complete![/bold green]\n\n"
+        f"Vault: {vault_addr}\n"
         f"KV Path: {kv_mount}/{kv_path}/\n\n"
-        "You can now use these commands:\n"
-        "  vaultctl env <name>        # Generate .env file\n"
+        "You can now use:\n"
+        "  vaultctl env <n>           # Generate .env file\n"
         "  vaultctl status            # Check status\n"
-        "  vaultctl run <n> -- cmd    # Run with injected env vars",
+        "  vaultctl compose init <n>  # Setup Docker Compose",
         title="✓ Complete",
     ))
 
@@ -462,7 +503,7 @@ def config_command():
         ("Vault Address", settings.vault_addr),
         ("KV Mount", settings.kv_mount),
         ("KV Path", settings.kv_path),
-        ("Full Path", f"{settings.kv_mount}/data/{settings.kv_path}/<name>"),
+        ("Full Path", f"{settings.kv_mount}/data/{settings.kv_path}/<n>"),
         ("AppRole Role ID", settings.approle_role_id[:8] + "..." if settings.approle_role_id else "-"),
         ("Config Directory", str(settings.config_dir)),
         ("Cache Directory", str(settings.cache_dir)),

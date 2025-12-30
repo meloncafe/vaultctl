@@ -13,8 +13,6 @@ A CLI tool for centrally managing secrets in Proxmox LXC containers with HashiCo
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [Command Reference](#command-reference)
-  - [User Commands](#user-commands)
-  - [Admin Commands](#admin-commands)
 - [Docker Compose Integration](#docker-compose-integration)
 - [Extended Commands](#extended-commands-teller-style)
 - [Configuration](#configuration)
@@ -27,7 +25,7 @@ A CLI tool for centrally managing secrets in Proxmox LXC containers with HashiCo
 
 ## Features
 
-- 🔐 **Simple Setup**: Single `vaultctl init` command for initial configuration
+- 🔐 **Simple Setup**: `vaultctl init` auto-generates AppRole credentials
 - 📦 **Secret Management**: Centralized management of environment variables per LXC
 - 🐳 **Docker Compose**: Full integration with automatic .env.secrets and compose file updates
 - 🔄 **Auto Token Renewal**: Automatic AppRole token reissue on expiration
@@ -112,73 +110,51 @@ poetry run vaultctl --help
 
 ## Quick Start
 
-### For Administrators
-
-#### 1. Setup Vault (one-time)
+### Step 1: Admin Setup (one-time, on any machine)
 
 ```bash
 vaultctl admin setup vault
 ```
 
-This creates:
-- Policy: `vaultctl` (read/write to kv/<path>/*)
-- AppRole: `vaultctl` with Role ID and Secret ID
-
-You will be prompted for:
+This creates Policy and AppRole in Vault. You'll be prompted for:
 - Vault server address
 - Root/Admin token
 - KV engine mount (default: `kv`)
 - Secret base path (default: `proxmox/lxc`)
 
-#### 2. Register Secrets
+### Step 2: Register Secrets
 
 ```bash
-# Add secrets for LXC 100
+# Add secrets for LXC 100 (path auto-created)
 vaultctl admin put 100 \
   DB_HOST=postgres.internal \
   DB_PASSWORD=supersecret \
   REDIS_URL=redis://redis.internal:6379
-
-# List all secrets
-vaultctl admin list
-
-# View specific secret
-vaultctl admin get 100
 ```
 
-### For Users (in each LXC)
-
-#### 1. Initial Setup (one-time)
+### Step 3: Initialize on Each LXC
 
 ```bash
 vaultctl init
 ```
 
-Interactive prompts for:
-- Vault server address
-- KV engine mount (e.g., `kv`)
-- Secret path (e.g., `proxmox/lxc`)
-- Role ID (from administrator)
-- Secret ID (from administrator)
+When prompted:
+1. Enter Vault server address
+2. Enter admin token (for auto-generating Secret ID)
+3. Enter KV mount and path
+4. AppRole name (default: `vaultctl`)
 
-Configuration saved to `~/.config/vaultctl/config`
+**That's it!** Secret ID is automatically generated for this machine.
 
-#### 2. Generate .env and Run
+### Step 4: Use Secrets
 
 ```bash
-cd /opt/myapp
-
 # Generate .env file
 vaultctl env 100
 
-# Run with Docker Compose
-docker compose up -d
-```
-
-Or use `vaultctl run` for direct injection:
-
-```bash
-vaultctl run 100 -- docker compose up -d
+# Or use with Docker Compose
+vaultctl compose init 100
+vaultctl compose up 100
 ```
 
 ---
@@ -187,11 +163,9 @@ vaultctl run 100 -- docker compose up -d
 
 ### User Commands
 
-Commands for daily use in LXC containers.
-
 | Command | Description |
 |---------|-------------|
-| `vaultctl init` | Initial setup (one-time) |
+| `vaultctl init` | Initial setup with auto Secret ID generation |
 | `vaultctl env <n>` | Generate .env file |
 | `vaultctl status` | Check connection and auth status |
 | `vaultctl config` | Show current configuration |
@@ -200,43 +174,113 @@ Commands for daily use in LXC containers.
 | `vaultctl watch <n> -- cmd` | Auto-restart on secret change |
 | `vaultctl scan` | Scan code for hardcoded secrets |
 | `vaultctl redact` | Mask secrets in logs |
-| `vaultctl compose init <n>` | Setup Docker Compose + secrets |
-| `vaultctl compose up <n>` | Sync secrets & start containers |
-| `vaultctl compose restart <n>` | Sync & restart containers |
 
-#### vaultctl init
+### Admin Commands
+
+| Command | Description |
+|---------|-------------|
+| `vaultctl admin setup vault` | Setup Vault policy and AppRole |
+| `vaultctl admin credentials` | Get Role ID + generate new Secret ID |
+| `vaultctl admin list` | List all secrets |
+| `vaultctl admin get <n>` | Get secret details |
+| `vaultctl admin put <n> K=V...` | Store secrets (path auto-created) |
+| `vaultctl admin delete <n>` | Delete secret |
+| `vaultctl admin import <file>` | Bulk import from JSON |
+| `vaultctl admin export` | Export all to JSON |
+| `vaultctl admin token status` | Check token status |
+| `vaultctl admin token renew` | Renew token |
+
+### Docker Compose Commands
+
+| Command | Description |
+|---------|-------------|
+| `vaultctl compose init <n>` | Setup compose + secrets |
+| `vaultctl compose up <n>` | Sync secrets & start |
+| `vaultctl compose down` | Stop containers |
+| `vaultctl compose restart <n>` | Sync & restart |
+| `vaultctl compose status` | Check status |
+| `vaultctl compose sync <n>` | Sync secrets only |
+
+---
+
+## Detailed Usage
+
+### vaultctl init
+
+Auto-generates AppRole credentials for this machine.
 
 ```bash
 $ vaultctl init
 
 🔐 Setup
-╭──────────────────────────────────────╮
-│ vaultctl Initial Setup               │
-│                                       │
-│ Configure Vault connection and       │
-│ authentication.                       │
-│ This setup only needs to be done once.│
-╰──────────────────────────────────────╯
+╭──────────────────────────────────────────╮
+│ vaultctl Initial Setup                   │
+│                                          │
+│ Connect to Vault and generate AppRole    │
+│ credentials. Requires admin token.       │
+╰──────────────────────────────────────────╯
 
 Vault server address: https://vault.example.com
 ✓ Connection successful
+
+Admin Authentication
+Admin/Root token: ********
+✓ Admin authentication successful
 
 KV Secret Path
 KV engine mount [kv]: kv
 Secret path [proxmox/lxc]: proxmox/lxc
 
-AppRole Authentication
-Role ID: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-Secret ID: ********
+AppRole
+AppRole name [vaultctl]: vaultctl
 
-✓ Authentication successful
-  Policies: vaultctl, default
-  TTL: 1 hour
+Checking AppRole 'vaultctl'...
+✓ AppRole found: vaultctl
+   Policies: vaultctl
+✓ Role ID retrieved
+
+Generating Secret ID for lxc-100...
+✓ Secret ID generated
+
+Testing AppRole authentication...
+✓ AppRole authentication successful
+   Policies: vaultctl, default
+   TTL: 1 hour
 
 ✓ Configuration saved: ~/.config/vaultctl/
 ```
 
-#### vaultctl env
+### vaultctl admin credentials
+
+For generating credentials without full init (useful for scripting):
+
+```bash
+# Get credentials for a new LXC
+vaultctl admin credentials
+
+# With TTL
+vaultctl admin credentials --ttl 7d
+
+# Copy to clipboard
+vaultctl admin credentials --copy-secret
+```
+
+### vaultctl admin put
+
+Secrets are stored automatically - no need to create paths first:
+
+```bash
+# Path proxmox/lxc/100 is auto-created
+vaultctl admin put 100 DB_HOST=localhost DB_PASSWORD=secret
+
+# Merge with existing (default)
+vaultctl admin put 100 NEW_KEY=value
+
+# Replace all values
+vaultctl admin put 100 ONLY_THIS=value --replace
+```
+
+### vaultctl env
 
 ```bash
 # Generate .env in current directory
@@ -249,453 +293,96 @@ vaultctl env 100 -o /opt/myapp/.env
 vaultctl env 100 --stdout
 ```
 
-#### vaultctl status
-
-```bash
-$ vaultctl status
-
-vaultctl Status
-
-1. Configuration
-   Vault: https://vault.example.com
-   KV Mount: kv
-   KV Path: proxmox/lxc/
-   Config Dir: ✓ ~/.config/vaultctl
-
-2. Connection
-   ✓ Vault server connected
-
-3. Authentication
-   ✓ Authenticated
-   Policies: vaultctl, default
-   TTL: 58 minutes
-
-4. Secrets Access
-   ✓ Access to kv/proxmox/lxc/ (5 secrets)
-
-✓ All checks passed
-```
-
-### Admin Commands
-
-Commands for administrators to manage secrets and infrastructure.
-
-| Command | Description |
-|---------|-------------|
-| `vaultctl admin list` | List all secrets |
-| `vaultctl admin get <n>` | Get secret details |
-| `vaultctl admin put <n> K=V...` | Store secrets |
-| `vaultctl admin delete <n>` | Delete secret |
-| `vaultctl admin import <file>` | Bulk import from JSON |
-| `vaultctl admin export` | Export all to JSON |
-| `vaultctl admin setup vault` | Setup Vault policy and AppRole |
-| `vaultctl admin setup apt-server` | Build APT repository server |
-| `vaultctl admin setup apt-client` | Configure APT client |
-| `vaultctl admin repo add <pkg>` | Add package to APT repo |
-| `vaultctl admin repo list` | List packages |
-| `vaultctl admin repo remove <pkg>` | Remove package |
-| `vaultctl admin token status` | Check token status |
-| `vaultctl admin token renew` | Renew token |
-
-#### Secret Management
-
-```bash
-# List all secrets
-vaultctl admin list
-vaultctl admin list -v  # verbose
-
-# Get specific secret
-vaultctl admin get 100
-vaultctl admin get 100 -f DB_PASSWORD       # specific field
-vaultctl admin get 100 -f DB_PASSWORD -c    # copy to clipboard
-vaultctl admin get 100 --raw                # JSON output
-
-# Store secrets
-vaultctl admin put 100 DB_HOST=localhost DB_PASSWORD=secret
-vaultctl admin put 100 NEW_KEY=value --merge    # merge with existing
-vaultctl admin put 100 ONLY_THIS=value --replace  # replace all
-
-# Delete
-vaultctl admin delete 100
-vaultctl admin delete 100 --force  # no confirmation
-```
-
-#### Bulk Operations
-
-```bash
-# Export all secrets to JSON
-vaultctl admin export -o secrets.json
-
-# Import from JSON
-vaultctl admin import secrets.json
-vaultctl admin import secrets.json --dry-run  # validate only
-```
-
-JSON format:
-```json
-{
-  "100": {
-    "DB_HOST": "postgres.internal",
-    "DB_PASSWORD": "secret123"
-  },
-  "101": {
-    "API_KEY": "xxxx",
-    "SECRET_KEY": "yyyy"
-  }
-}
-```
-
-#### Vault Setup
-
-```bash
-$ vaultctl admin setup vault
-
-Vault server address: https://vault.example.com
-Root/Admin token: ********
-
-Testing connection...
-✓ Connected
-
-KV Path Configuration
-KV engine mount [kv]: kv
-Secret base path [proxmox/lxc]: proxmox/lxc
-
-🔐 Vault Setup
-╭──────────────────────────────────────╮
-│ This will create:                    │
-│ • Policy: vaultctl                   │
-│ • AppRole: vaultctl                  │
-│ • Access: kv/data/proxmox/*          │
-╰──────────────────────────────────────╯
-
-1. KV Secrets Engine
-   ✓ Exists: kv/
-
-2. Policy
-   ✓ Created: vaultctl
-   Access: kv/data/proxmox/*
-
-3. AppRole Auth
-   ✓ Enabled: approle/
-
-4. AppRole
-   ✓ Created: vaultctl
-
-5. Credentials
-────────────────────────────────────────
-Save these credentials securely!
-────────────────────────────────────────
-  Role ID:    xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-  Secret ID:  yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy
-
-  KV Mount:   kv
-  KV Path:    proxmox/lxc
-────────────────────────────────────────
-```
-
 ---
 
 ## Docker Compose Integration
 
-Seamless integration between Vault secrets and Docker Compose workflows.
-
 ### Quick Setup
 
 ```bash
-# Navigate to your docker-compose project
 cd /opt/myapp
-
-# Initialize (creates .env.secrets, updates docker-compose.yml)
 vaultctl compose init 100
-
-# Start containers with secrets
 vaultctl compose up 100
 ```
 
-### Commands
+### What `compose init` Does
 
-| Command | Description |
-|---------|-------------|
-| `vaultctl compose init <n>` | Setup compose + secrets |
-| `vaultctl compose up <n>` | Sync secrets & start |
-| `vaultctl compose down` | Stop containers |
-| `vaultctl compose restart <n>` | Sync & restart |
-| `vaultctl compose pull` | Pull images |
-| `vaultctl compose logs` | Show logs |
-| `vaultctl compose status` | Check status |
-| `vaultctl compose prune` | Clean up images |
-| `vaultctl compose sync <n>` | Sync secrets only |
-
-### vaultctl compose init
-
-Interactive setup that:
 1. Creates `.env.secrets` from Vault
 2. Updates `docker-compose.yml` with `env_file` entries
-3. Optionally generates management script (`ctl.sh`)
+3. Optionally generates `ctl.sh` management script
 4. Updates `.gitignore`
-
-```bash
-# Interactive mode
-vaultctl compose init
-
-# With secret name
-vaultctl compose init 100
-
-# Specific services only
-vaultctl compose init 100 -s web,api
-
-# Generate management script
-vaultctl compose init 100 --script
-
-# Skip confirmations
-vaultctl compose init 100 -y
-```
 
 **Before:**
 ```yaml
 services:
-  n8n:
-    image: n8nio/n8n
-    environment:
-      - NODE_ENV=production
+  app:
+    image: myapp
 ```
 
 **After:**
 ```yaml
 services:
-  n8n:
-    image: n8nio/n8n
+  app:
+    image: myapp
     env_file:
       - .env
       - .env.secrets
-    environment:
-      - NODE_ENV=production
 ```
 
-### vaultctl compose up
-
-Sync secrets and start containers in one command.
+### Management Script
 
 ```bash
-# Basic usage
-vaultctl compose up 100
-
-# Pull images first
-vaultctl compose up 100 --pull
-
-# Build and prune old images
-vaultctl compose up 100 --build --prune
-
-# Specify compose file
-vaultctl compose up 100 -f docker-compose.prod.yml
-```
-
-### vaultctl compose restart
-
-Sync secrets and restart containers (uses down + up internally to reload env vars).
-
-```bash
-vaultctl compose restart 100
-vaultctl compose restart 100 --pull  # Pull new images first
-```
-
-### vaultctl compose status
-
-Check container status and secret sync state.
-
-```bash
-# Basic status
-vaultctl compose status
-
-# With sync check
-vaultctl compose status 100
-```
-
-Output:
-```
-Docker Compose Status
-
-1. Containers
-   NAME    IMAGE        STATUS
-   n8n     n8nio/n8n    Up 2 hours
-
-2. Secret Files
-   ✓ .env (modified: 2025-12-28 10:00:00)
-   ✓ .env.secrets (modified: 2025-12-29 09:30:00)
-
-3. Vault Sync (100)
-   Vault hash: a1b2c3d4e5f6
-   ✓ Synced with Vault
-```
-
-### Generated Management Script
-
-With `--script` option, generates `ctl.sh` for convenient management:
-
-```bash
-./ctl.sh up       # Sync secrets and start
-./ctl.sh down     # Stop containers
-./ctl.sh restart  # Sync and restart
-./ctl.sh logs -f  # Follow logs
-./ctl.sh pull     # Pull images
-./ctl.sh status   # Show status
-./ctl.sh sync     # Sync secrets only
-./ctl.sh prune    # Clean up images
-```
-
-### Multiple Compose Files
-
-```bash
-# Use specific compose file
-vaultctl compose init 100 -f docker-compose.prod.yml
-vaultctl compose up 100 -f docker-compose.prod.yml
-
-# Different output file
-vaultctl compose up 100 -o .env.production
-```
-
-### Workflow Example
-
-```bash
-# 1. Initial setup (one-time)
-cd /opt/myapp
 vaultctl compose init 100 --script
 
-# 2. Daily usage
-./ctl.sh up
-./ctl.sh logs -f
-./ctl.sh restart
-
-# 3. Update secrets (in Vault)
-vaultctl admin put 100 NEW_API_KEY=xxx
-
-# 4. Apply new secrets
-vaultctl compose restart 100
-# or: ./ctl.sh restart
+./ctl.sh up       # Sync secrets and start
+./ctl.sh restart  # Sync and restart
+./ctl.sh logs -f  # Follow logs
+./ctl.sh status   # Show status
 ```
 
 ---
 
 ## Extended Commands (teller-style)
 
-Advanced features inspired by [teller](https://github.com/tellerops/teller).
-
 ### vaultctl run
 
-Run processes with Vault environment variables injected.
-
 ```bash
-# Run with injected env vars
 vaultctl run 100 -- node index.js
 vaultctl run 100 -- docker compose up -d
-
-# Run shell command
 vaultctl run 100 --shell -- 'echo $DB_PASSWORD | base64'
-
-# Reset existing env vars (isolated execution)
-vaultctl run 100 --reset -- python app.py
 ```
 
 ### vaultctl sh
 
-Generate shell export statements for direct sourcing.
-
 ```bash
-# Load env vars in current shell
 eval "$(vaultctl sh 100)"
-
-# Add to .bashrc/.zshrc
-echo 'eval "$(vaultctl sh 100)"' >> ~/.bashrc
-
-# Fish shell
-vaultctl sh 100 --format fish | source
 ```
 
 ### vaultctl scan
 
-Search for hardcoded secrets in code (DevSecOps).
-
 ```bash
-# Scan current directory
-vaultctl scan
-
-# Scan specific path
 vaultctl scan ./src
-
-# For CI/CD (exit 1 if secrets found)
-vaultctl scan --error-if-found
-
-# JSON output
-vaultctl scan --json
-
-# Scan specific secret only
-vaultctl scan --name 100
-```
-
-### vaultctl redact
-
-Mask secrets in logs or output.
-
-```bash
-# Pipe through redact
-cat app.log | vaultctl redact
-
-# Real-time log masking
-tail -f /var/log/app.log | vaultctl redact
-
-# Process file
-vaultctl redact --in dirty.log --out clean.log
-
-# Custom mask
-vaultctl redact --mask "[HIDDEN]" < input.log
+vaultctl scan --error-if-found  # CI/CD
 ```
 
 ### vaultctl watch
 
-Auto-restart processes when Vault secrets change.
-
 ```bash
-# Watch and restart on change
 vaultctl watch 100 -- docker compose up -d
-
-# Custom check interval (default 60s)
-vaultctl watch 100 --interval 300 -- docker compose up -d
-
-# Send SIGHUP instead of restart
-vaultctl watch 100 --on-change reload -- ./app
-```
-
-Register as systemd service:
-
-```ini
-# /etc/systemd/system/myapp-watcher.service
-[Unit]
-Description=MyApp Secret Watcher
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=/usr/bin/vaultctl watch 100 -- docker compose -f /opt/myapp/docker-compose.yml up
-Restart=always
-WorkingDirectory=/opt/myapp
-
-[Install]
-WantedBy=multi-user.target
 ```
 
 ---
 
 ## Configuration
 
-### Configuration Files
+### Files
 
 | Path | Description |
 |------|-------------|
 | `~/.config/vaultctl/config` | User configuration |
 | `~/.cache/vaultctl/token` | Cached token |
-| `/etc/vaultctl/config` | System configuration (admin) |
 
-### Configuration Format
+### Format
 
 ```bash
 # ~/.config/vaultctl/config
@@ -710,20 +397,11 @@ VAULT_SECRET_ID=yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `VAULTCTL_VAULT_ADDR` | `https://vault.example.com` | Vault server address |
-| `VAULTCTL_VAULT_TOKEN` | - | Vault token (optional) |
-| `VAULTCTL_APPROLE_ROLE_ID` | - | AppRole Role ID |
-| `VAULTCTL_APPROLE_SECRET_ID` | - | AppRole Secret ID |
+| `VAULTCTL_VAULT_ADDR` | - | Vault server address |
 | `VAULTCTL_KV_MOUNT` | `kv` | KV engine mount path |
 | `VAULTCTL_KV_PATH` | `proxmox/lxc` | Secret base path |
-
-### KV Path Examples
-
-| Use Case | kv_mount | kv_path | Full Path |
-|----------|----------|---------|-----------|
-| Proxmox LXC | `kv` | `proxmox/lxc` | `kv/data/proxmox/lxc/100` |
-| Docker Swarm | `secrets` | `docker/swarm` | `secrets/data/docker/swarm/myapp` |
-| Kubernetes | `kv` | `k8s/prod` | `kv/data/k8s/prod/deployment` |
+| `VAULTCTL_APPROLE_ROLE_ID` | - | AppRole Role ID |
+| `VAULTCTL_APPROLE_SECRET_ID` | - | AppRole Secret ID |
 
 ---
 
@@ -735,13 +413,7 @@ VAULT_SECRET_ID=yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy
 sudo vaultctl admin setup apt-server
 ```
 
-Interactive setup for:
-- Web server mode (Caddy/Traefik)
-- Domain configuration
-- GPG signing
-- Authentication
-
-### Configure APT Client
+### Configure Client
 
 ```bash
 sudo vaultctl admin setup apt-client https://apt.example.com -u apt -p "password"
@@ -750,17 +422,9 @@ sudo vaultctl admin setup apt-client https://apt.example.com -u apt -p "password
 ### Manage Packages
 
 ```bash
-# Add package
 vaultctl admin repo add vaultctl_0.1.0_amd64.deb
-
-# List packages
 vaultctl admin repo list
-
-# Remove package
 vaultctl admin repo remove vaultctl
-
-# Sync from GitHub releases
-vaultctl admin repo sync
 ```
 
 ---
@@ -790,25 +454,15 @@ flowchart LR
     A2 -->|https| C1
 ```
 
-### Build
-
 ```bash
-git clone https://github.com/YOUR_USERNAME/vaultctl.git
-cd vaultctl
+# Build
 ./build-deb.sh
-# Result: dist/vaultctl_x.x.x_amd64.deb
-```
 
-### Deploy
-
-```bash
-# Copy to APT server
+# Deploy
 scp dist/vaultctl_*.deb root@apt-server:/tmp/
-
-# Add to repository
 ssh root@apt-server "vaultctl admin repo add /tmp/vaultctl_*.deb"
 
-# Clients update
+# Update clients
 sudo apt update && sudo apt upgrade vaultctl
 ```
 
@@ -819,10 +473,7 @@ sudo apt update && sudo apt upgrade vaultctl
 ### File Permissions
 
 ```bash
-# User config (contains credentials)
 chmod 600 ~/.config/vaultctl/config
-
-# Token cache
 chmod 600 ~/.cache/vaultctl/token
 ```
 
@@ -839,80 +490,21 @@ chmod 600 ~/.cache/vaultctl/token
 ### Authentication Errors
 
 ```bash
-# Check status
 vaultctl status
-
-# Re-initialize
-vaultctl init
+vaultctl init  # Re-initialize
 ```
 
 ### Permission Denied
 
-Check your policy configuration:
-
 ```bash
-# View current config
 vaultctl config
-
-# Verify the policy allows access to the path
-# Policy should include:
-#   path "kv/data/proxmox/*" { capabilities = [...] }
-#   path "kv/metadata/proxmox/*" { capabilities = [...] }
+# Check policy includes: path "kv/data/proxmox/*" { ... }
 ```
 
 ### Connection Issues
 
 ```bash
-# Test Vault connection
 curl -s https://vault.example.com/v1/sys/health | jq
-
-# Check config
-vaultctl config
-```
-
-### Token Expiration
-
-```bash
-# Check token
-vaultctl admin token status
-
-# Renew token
-vaultctl admin token renew
-
-# Or re-authenticate (AppRole)
-vaultctl init
-```
-
----
-
-## Migration from Previous Version
-
-| Old Command | New Command |
-|-------------|-------------|
-| `vaultctl setup init` | `vaultctl init` |
-| `vaultctl auth login` | `vaultctl init` |
-| `vaultctl auth status` | `vaultctl status` |
-| `vaultctl lxc list` | `vaultctl admin list` |
-| `vaultctl lxc get <n>` | `vaultctl admin get <n>` |
-| `vaultctl lxc put <n>` | `vaultctl admin put <n>` |
-| `vaultctl docker env <n>` | `vaultctl env <n>` |
-| `vaultctl token renew` | `vaultctl admin token renew` |
-| `vaultctl repo add` | `vaultctl admin repo add` |
-
-### Configuration Changes
-
-Old config format:
-```bash
-VAULT_ADDR=...
-VAULT_KV_MOUNT=proxmox    # Was used as mount
-VAULT_KV_PATH=lxc         # Was the sub-path
-```
-
-New config format:
-```bash
-VAULT_ADDR=...
-VAULT_KV_MOUNT=kv         # KV engine mount
-VAULT_KV_PATH=proxmox/lxc # Full path within KV
 ```
 
 ---
