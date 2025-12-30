@@ -15,6 +15,7 @@ Proxmox LXC 컨테이너의 시크릿을 HashiCorp Vault로 중앙 관리하는 
 - [명령어 레퍼런스](#명령어-레퍼런스)
   - [사용자 명령어](#사용자-명령어)
   - [관리자 명령어](#관리자-명령어)
+- [Docker Compose 통합](#docker-compose-통합)
 - [확장 명령어](#확장-명령어-teller-스타일)
 - [설정](#설정)
 - [APT 서버 구축](#apt-서버-구축)
@@ -28,7 +29,7 @@ Proxmox LXC 컨테이너의 시크릿을 HashiCorp Vault로 중앙 관리하는 
 
 - 🔐 **간단한 설정**: `vaultctl init` 한 번으로 초기 설정 완료
 - 📦 **시크릿 관리**: LXC별 환경변수 중앙 관리
-- 🐳 **Docker 지원**: .env 파일 자동 생성
+- 🐳 **Docker Compose**: .env.secrets 자동 생성 및 compose 파일 업데이트 통합
 - 🔄 **토큰 자동 갱신**: AppRole 토큰 만료 시 자동 재발급
 - 🎯 **단일 바이너리**: Python 의존성 없이 설치 (deb 패키지)
 - 🚀 **프로세스 실행**: 환경변수 주입하며 명령어 실행
@@ -203,6 +204,9 @@ LXC 컨테이너에서 일상적으로 사용하는 명령어입니다.
 | `vaultctl watch <n> -- cmd` | 비밀 변경 시 자동 재시작 |
 | `vaultctl scan` | 코드에서 하드코딩된 비밀 검색 |
 | `vaultctl redact` | 로그에서 비밀 마스킹 |
+| `vaultctl compose init <n>` | Docker Compose + 시크릿 설정 |
+| `vaultctl compose up <n>` | 시크릿 동기화 & 컨테이너 시작 |
+| `vaultctl compose restart <n>` | 동기화 & 컨테이너 재시작 |
 
 #### vaultctl init
 
@@ -391,6 +395,159 @@ Save these credentials securely!
   KV Mount:   kv
   KV Path:    proxmox/lxc
 ────────────────────────────────────────
+```
+
+---
+
+## Docker Compose 통합
+
+Vault 시크릿과 Docker Compose 워크플로우의 원활한 통합.
+
+### 빠른 설정
+
+```bash
+# docker-compose 프로젝트 디렉토리로 이동
+cd /opt/myapp
+
+# 초기화 (.env.secrets 생성, docker-compose.yml 업데이트)
+vaultctl compose init 100
+
+# 시크릿과 함께 컨테이너 시작
+vaultctl compose up 100
+```
+
+### 명령어
+
+| 명령어 | 설명 |
+|--------|------|
+| `vaultctl compose init <n>` | compose + 시크릿 설정 |
+| `vaultctl compose up <n>` | 시크릿 동기화 & 시작 |
+| `vaultctl compose down` | 컨테이너 중지 |
+| `vaultctl compose restart <n>` | 동기화 & 재시작 |
+| `vaultctl compose pull` | 이미지 풀 |
+| `vaultctl compose logs` | 로그 출력 |
+| `vaultctl compose status` | 상태 확인 |
+| `vaultctl compose prune` | 이미지 정리 |
+| `vaultctl compose sync <n>` | 시크릿만 동기화 |
+
+### vaultctl compose init
+
+대화형 설정으로:
+1. Vault에서 `.env.secrets` 생성
+2. `docker-compose.yml`에 `env_file` 항목 추가
+3. 관리 스크립트(`ctl.sh`) 생성 (선택)
+4. `.gitignore` 업데이트
+
+```bash
+# 대화형 모드
+vaultctl compose init
+
+# 시크릿 이름 지정
+vaultctl compose init 100
+
+# 특정 서비스만
+vaultctl compose init 100 -s web,api
+
+# 관리 스크립트 생성
+vaultctl compose init 100 --script
+
+# 확인 생략
+vaultctl compose init 100 -y
+```
+
+**변경 전:**
+```yaml
+services:
+  n8n:
+    image: n8nio/n8n
+    environment:
+      - NODE_ENV=production
+```
+
+**변경 후:**
+```yaml
+services:
+  n8n:
+    image: n8nio/n8n
+    env_file:
+      - .env
+      - .env.secrets
+    environment:
+      - NODE_ENV=production
+```
+
+### vaultctl compose up
+
+시크릿 동기화 후 컨테이너 시작.
+
+```bash
+# 기본 사용
+vaultctl compose up 100
+
+# 이미지 먼저 풀
+vaultctl compose up 100 --pull
+
+# 빌드 및 오래된 이미지 정리
+vaultctl compose up 100 --build --prune
+
+# compose 파일 지정
+vaultctl compose up 100 -f docker-compose.prod.yml
+```
+
+### vaultctl compose restart
+
+시크릿 동기화 후 컨테이너 재시작 (환경변수 적용을 위해 down + up 실행).
+
+```bash
+vaultctl compose restart 100
+vaultctl compose restart 100 --pull  # 이미지 먼저 풀
+```
+
+### vaultctl compose status
+
+컨테이너 상태 및 시크릿 동기화 상태 확인.
+
+```bash
+# 기본 상태
+vaultctl compose status
+
+# 동기화 상태 포함
+vaultctl compose status 100
+```
+
+### 생성된 관리 스크립트
+
+`--script` 옵션으로 `ctl.sh` 생성:
+
+```bash
+./ctl.sh up       # 시크릿 동기화 후 시작
+./ctl.sh down     # 컨테이너 중지
+./ctl.sh restart  # 동기화 후 재시작
+./ctl.sh logs -f  # 로그 확인
+./ctl.sh pull     # 이미지 풀
+./ctl.sh status   # 상태 확인
+./ctl.sh sync     # 시크릿만 동기화
+./ctl.sh prune    # 이미지 정리
+```
+
+### 워크플로우 예시
+
+```bash
+# 1. 초기 설정 (최초 1회)
+cd /opt/myapp
+vaultctl compose init 100 --script
+
+# 2. 일상 사용
+./ctl.sh up
+./ctl.sh logs -f
+./ctl.sh restart
+
+# 3. 시크릿 업데이트 (Vault에서)
+vaultctl admin put 100 NEW_API_KEY=xxx
+
+# 4. 새 시크릿 적용
+vaultctl compose restart 100
+# 또는: ./ctl.sh restart
 ```
 
 ---

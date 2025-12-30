@@ -15,6 +15,7 @@ A CLI tool for centrally managing secrets in Proxmox LXC containers with HashiCo
 - [Command Reference](#command-reference)
   - [User Commands](#user-commands)
   - [Admin Commands](#admin-commands)
+- [Docker Compose Integration](#docker-compose-integration)
 - [Extended Commands](#extended-commands-teller-style)
 - [Configuration](#configuration)
 - [APT Server Setup](#apt-server-setup)
@@ -28,7 +29,7 @@ A CLI tool for centrally managing secrets in Proxmox LXC containers with HashiCo
 
 - 🔐 **Simple Setup**: Single `vaultctl init` command for initial configuration
 - 📦 **Secret Management**: Centralized management of environment variables per LXC
-- 🐳 **Docker Support**: Automatic .env file generation
+- 🐳 **Docker Compose**: Full integration with automatic .env.secrets and compose file updates
 - 🔄 **Auto Token Renewal**: Automatic AppRole token reissue on expiration
 - 🎯 **Single Binary**: Install without Python dependencies (deb package)
 - 🚀 **Process Execution**: Run commands with injected environment variables
@@ -203,6 +204,9 @@ Commands for daily use in LXC containers.
 | `vaultctl watch <n> -- cmd` | Auto-restart on secret change |
 | `vaultctl scan` | Scan code for hardcoded secrets |
 | `vaultctl redact` | Mask secrets in logs |
+| `vaultctl compose init <n>` | Setup Docker Compose + secrets |
+| `vaultctl compose up <n>` | Sync secrets & start containers |
+| `vaultctl compose restart <n>` | Sync & restart containers |
 
 #### vaultctl init
 
@@ -391,6 +395,187 @@ Save these credentials securely!
   KV Mount:   kv
   KV Path:    proxmox/lxc
 ────────────────────────────────────────
+```
+
+---
+
+## Docker Compose Integration
+
+Seamless integration between Vault secrets and Docker Compose workflows.
+
+### Quick Setup
+
+```bash
+# Navigate to your docker-compose project
+cd /opt/myapp
+
+# Initialize (creates .env.secrets, updates docker-compose.yml)
+vaultctl compose init 100
+
+# Start containers with secrets
+vaultctl compose up 100
+```
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `vaultctl compose init <n>` | Setup compose + secrets |
+| `vaultctl compose up <n>` | Sync secrets & start |
+| `vaultctl compose down` | Stop containers |
+| `vaultctl compose restart <n>` | Sync & restart |
+| `vaultctl compose pull` | Pull images |
+| `vaultctl compose logs` | Show logs |
+| `vaultctl compose status` | Check status |
+| `vaultctl compose prune` | Clean up images |
+| `vaultctl compose sync <n>` | Sync secrets only |
+
+### vaultctl compose init
+
+Interactive setup that:
+1. Creates `.env.secrets` from Vault
+2. Updates `docker-compose.yml` with `env_file` entries
+3. Optionally generates management script (`ctl.sh`)
+4. Updates `.gitignore`
+
+```bash
+# Interactive mode
+vaultctl compose init
+
+# With secret name
+vaultctl compose init 100
+
+# Specific services only
+vaultctl compose init 100 -s web,api
+
+# Generate management script
+vaultctl compose init 100 --script
+
+# Skip confirmations
+vaultctl compose init 100 -y
+```
+
+**Before:**
+```yaml
+services:
+  n8n:
+    image: n8nio/n8n
+    environment:
+      - NODE_ENV=production
+```
+
+**After:**
+```yaml
+services:
+  n8n:
+    image: n8nio/n8n
+    env_file:
+      - .env
+      - .env.secrets
+    environment:
+      - NODE_ENV=production
+```
+
+### vaultctl compose up
+
+Sync secrets and start containers in one command.
+
+```bash
+# Basic usage
+vaultctl compose up 100
+
+# Pull images first
+vaultctl compose up 100 --pull
+
+# Build and prune old images
+vaultctl compose up 100 --build --prune
+
+# Specify compose file
+vaultctl compose up 100 -f docker-compose.prod.yml
+```
+
+### vaultctl compose restart
+
+Sync secrets and restart containers (uses down + up internally to reload env vars).
+
+```bash
+vaultctl compose restart 100
+vaultctl compose restart 100 --pull  # Pull new images first
+```
+
+### vaultctl compose status
+
+Check container status and secret sync state.
+
+```bash
+# Basic status
+vaultctl compose status
+
+# With sync check
+vaultctl compose status 100
+```
+
+Output:
+```
+Docker Compose Status
+
+1. Containers
+   NAME    IMAGE        STATUS
+   n8n     n8nio/n8n    Up 2 hours
+
+2. Secret Files
+   ✓ .env (modified: 2025-12-28 10:00:00)
+   ✓ .env.secrets (modified: 2025-12-29 09:30:00)
+
+3. Vault Sync (100)
+   Vault hash: a1b2c3d4e5f6
+   ✓ Synced with Vault
+```
+
+### Generated Management Script
+
+With `--script` option, generates `ctl.sh` for convenient management:
+
+```bash
+./ctl.sh up       # Sync secrets and start
+./ctl.sh down     # Stop containers
+./ctl.sh restart  # Sync and restart
+./ctl.sh logs -f  # Follow logs
+./ctl.sh pull     # Pull images
+./ctl.sh status   # Show status
+./ctl.sh sync     # Sync secrets only
+./ctl.sh prune    # Clean up images
+```
+
+### Multiple Compose Files
+
+```bash
+# Use specific compose file
+vaultctl compose init 100 -f docker-compose.prod.yml
+vaultctl compose up 100 -f docker-compose.prod.yml
+
+# Different output file
+vaultctl compose up 100 -o .env.production
+```
+
+### Workflow Example
+
+```bash
+# 1. Initial setup (one-time)
+cd /opt/myapp
+vaultctl compose init 100 --script
+
+# 2. Daily usage
+./ctl.sh up
+./ctl.sh logs -f
+./ctl.sh restart
+
+# 3. Update secrets (in Vault)
+vaultctl admin put 100 NEW_API_KEY=xxx
+
+# 4. Apply new secrets
+vaultctl compose restart 100
+# or: ./ctl.sh restart
 ```
 
 ---

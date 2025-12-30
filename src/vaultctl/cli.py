@@ -23,7 +23,7 @@ from rich.prompt import Prompt
 from rich.table import Table
 
 from vaultctl import __version__
-from vaultctl.commands import admin, extended
+from vaultctl.commands import admin, compose, extended
 from vaultctl.config import settings
 from vaultctl.utils import format_duration, write_env_file
 from vaultctl.vault_client import VaultClient, VaultError
@@ -36,8 +36,9 @@ app = typer.Typer(
 )
 console = Console()
 
-# Admin sub-command
+# Sub-commands
 app.add_typer(admin.app, name="admin", help="Administrator commands / 관리자 명령어")
+app.add_typer(compose.app, name="compose", help="Docker Compose integration / Docker Compose 통합")
 
 # Extended commands (user-facing)
 app.command("run")(extended.run_command)
@@ -116,6 +117,13 @@ def main(
         vaultctl init              # Initial setup (one-time)
         vaultctl env 100           # Generate .env file
         docker compose up -d       # Run
+    
+    \b
+    Docker Compose:
+        vaultctl compose init 100            # Setup compose + secrets
+        vaultctl compose up 100              # Sync secrets & start
+        vaultctl compose restart 100         # Sync & restart
+        vaultctl compose status              # Check status
     
     \b
     Advanced:
