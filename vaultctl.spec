@@ -3,12 +3,17 @@
 
 import sys
 from pathlib import Path
+from PyInstaller.utils.hooks import collect_submodules, collect_data_files
 
 block_cipher = None
 
 # 소스 경로
 src_path = Path("src")
 templates_path = src_path / "vaultctl" / "templates"
+
+# Collect ALL vaultctl submodules (prevents silent import failures)
+# 모든 vaultctl 하위 모듈 수집 (무시되는 import 방지)
+vaultctl_imports = collect_submodules('vaultctl')
 
 a = Analysis(
     [str(src_path / "vaultctl" / "__main__.py")],
@@ -18,19 +23,7 @@ a = Analysis(
         # Include Jinja2 templates / Jinja2 템플릿 포함
         (str(templates_path), "vaultctl/templates"),
     ],
-    hiddenimports=[
-        # vaultctl 모듈
-        "vaultctl",
-        "vaultctl.cli",
-        "vaultctl.config",
-        "vaultctl.vault_client",
-        "vaultctl.utils",
-        "vaultctl.commands",
-        "vaultctl.commands.admin",
-        "vaultctl.commands.compose",
-        "vaultctl.commands.extended",
-        "vaultctl.commands.repo",
-        "vaultctl.commands.setup",
+    hiddenimports=vaultctl_imports + [
         # 외부 의존성
         "typer",
         "rich",
