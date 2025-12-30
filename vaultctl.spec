@@ -25,7 +25,6 @@ a = Analysis(
         "vaultctl.config",
         "vaultctl.vault_client",
         "vaultctl.utils",
-        "vaultctl.commands",
         "vaultctl.commands.admin",
         "vaultctl.commands.compose",
         "vaultctl.commands.extended",
