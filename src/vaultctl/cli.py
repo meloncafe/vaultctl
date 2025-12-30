@@ -453,7 +453,7 @@ VAULT_SECRET_ID={secret_id}
 @app.command("env")
 def env_command(
     name: str = typer.Argument(..., help="Secret name (e.g., 001)"),
-    output: Path = typer.Option(Path(".env"), "--output", "-o", help="Output file"),
+    output: Path = typer.Option(Path(".env.secrets"), "--output", "-o", help="Output file"),
     stdout: bool = typer.Option(False, "--stdout", help="Output to stdout"),
     lowercase: bool = typer.Option(False, "--lowercase", "-l", help="Use lowercase keys"),
     no_transform: bool = typer.Option(False, "--no-transform", "-n", help="Keep original key names"),
