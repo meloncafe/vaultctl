@@ -23,7 +23,7 @@ from rich.prompt import Prompt
 from rich.table import Table
 
 from vaultctl import __version__
-from vaultctl.commands import admin, compose, repo, extended
+from vaultctl.commands import admin, compose, extended, repo
 from vaultctl.config import settings
 from vaultctl.utils import format_duration, write_env_file
 from vaultctl.vault_client import VaultClient, VaultError
