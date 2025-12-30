@@ -36,7 +36,7 @@ app = typer.Typer(
 )
 console = Console()
 
-# Sub-commands
+# Admin sub-command
 app.add_typer(admin.app, name="admin", help="Administrator commands / 관리자 명령어")
 
 # Extended commands (user-facing)

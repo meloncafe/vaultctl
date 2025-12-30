@@ -29,7 +29,6 @@ from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
-from vaultctl.commands import repo
 from vaultctl.config import settings
 from vaultctl.utils import copy_to_clipboard, create_kv_table, format_duration, parse_key_value_args
 from vaultctl.vault_client import VaultClient, VaultError
@@ -47,6 +46,9 @@ token_app = typer.Typer(help="Token management / 토큰 관리")
 
 app.add_typer(setup_app, name="setup")
 app.add_typer(token_app, name="token")
+
+# Import repo commands
+from vaultctl.commands import repo
 app.add_typer(repo.app, name="repo", help="APT package management / APT 패키지 관리")
 
 
