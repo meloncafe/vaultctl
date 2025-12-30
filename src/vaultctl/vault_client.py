@@ -1,5 +1,6 @@
 """Vault API 클라이언트."""
 
+import json
 from typing import Any, Optional
 
 import httpx
@@ -224,7 +225,8 @@ class VaultClient:
         """
         data: dict[str, Any] = {}
         if metadata:
-            data["metadata"] = metadata
+            # Vault expects metadata as JSON string
+            data["metadata"] = json.dumps(metadata)
         if ttl:
             data["ttl"] = ttl
 
