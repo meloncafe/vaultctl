@@ -25,8 +25,7 @@ from rich.prompt import Prompt, Confirm
 from ruamel.yaml import YAML
 
 from vaultctl.config import settings
-from vaultctl.templates import render_template
-from vaultctl.utils import write_env_file
+from vaultctl.utils import render_template, write_env_file
 from vaultctl.vault_client import VaultClient, VaultError
 
 app = typer.Typer(
