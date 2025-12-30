@@ -23,10 +23,7 @@ from rich.prompt import Prompt
 from rich.table import Table
 
 from vaultctl import __version__
-from vaultctl.commands.admin import app as admin_app
-from vaultctl.commands.compose import app as compose_app
-from vaultctl.commands.extended import run_command, shell_export, scan_secrets, redact_secrets, watch_and_restart
-from vaultctl.commands.repo import app as repo_app
+from vaultctl.commands import admin, compose, extended
 from vaultctl.config import settings
 from vaultctl.utils import format_duration, write_env_file
 from vaultctl.vault_client import VaultClient, VaultError
@@ -40,18 +37,19 @@ app = typer.Typer(
 console = Console()
 
 # Sub-commands
-app.add_typer(admin_app, name="admin", help="Administrator commands / 관리자 명령어")
-app.add_typer(compose_app, name="compose", help="Docker Compose integration / Docker Compose 통합")
+app.add_typer(admin.app, name="admin", help="Administrator commands / 관리자 명령어")
+app.add_typer(compose.app, name="compose", help="Docker Compose integration / Docker Compose 통합")
 
-# Add repo commands to admin
-admin_app.add_typer(repo_app, name="repo", help="APT package management / APT 패키지 관리")
+# Add repo commands to admin (local import to avoid circular import)
+from vaultctl.commands import repo
+admin.app.add_typer(repo.app, name="repo", help="APT package management / APT 패키지 관리")
 
 # Extended commands (user-facing)
-app.command("run")(run_command)
-app.command("sh")(shell_export)
-app.command("scan")(scan_secrets)
-app.command("redact")(redact_secrets)
-app.command("watch")(watch_and_restart)
+app.command("run")(extended.run_command)
+app.command("sh")(extended.shell_export)
+app.command("scan")(extended.scan_secrets)
+app.command("redact")(extended.redact_secrets)
+app.command("watch")(extended.watch_and_restart)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
