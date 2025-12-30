@@ -31,23 +31,23 @@ from vaultctl.config import settings
 from vaultctl.utils import copy_to_clipboard, create_kv_table, format_duration, parse_key_value_args
 from vaultctl.vault_client import VaultClient, VaultError
 
-app = typer.Typer(
-    name="admin",
-    help="Administrator commands / 관리자 명령어",
-    no_args_is_help=True,
-)
 console = Console()
 
 # Sub-apps
 setup_app = typer.Typer(help="Setup commands / 설정 명령어")
 token_app = typer.Typer(help="Token management / 토큰 관리")
 
+app = typer.Typer(
+    name="admin",
+    help="Administrator commands / 관리자 명령어",
+    no_args_is_help=True,
+)
+
 app.add_typer(setup_app, name="setup")
 app.add_typer(token_app, name="token")
 
-# Import repo commands
-from vaultctl.commands import repo
-app.add_typer(repo.app, name="repo", help="APT package management / APT 패키지 관리")
+
+# Note: repo commands are added in cli.py to avoid circular import
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

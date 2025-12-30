@@ -40,6 +40,10 @@ console = Console()
 app.add_typer(admin.app, name="admin", help="Administrator commands / 관리자 명령어")
 app.add_typer(compose.app, name="compose", help="Docker Compose integration / Docker Compose 통합")
 
+# Add repo commands to admin (done here to avoid circular import)
+from vaultctl.commands import repo
+admin.app.add_typer(repo.app, name="repo", help="APT package management / APT 패키지 관리")
+
 # Extended commands (user-facing)
 app.command("run")(extended.run_command)
 app.command("sh")(extended.shell_export)
