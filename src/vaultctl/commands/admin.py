@@ -18,15 +18,13 @@ Usage:
 """
 
 import json
-import os
-import subprocess
 from pathlib import Path
 from typing import Optional
 
 import typer
 from rich.console import Console
 from rich.panel import Panel
-from rich.prompt import Confirm, Prompt
+from rich.prompt import Prompt
 from rich.table import Table
 
 from vaultctl.config import settings
@@ -47,9 +45,9 @@ token_app = typer.Typer(help="Token management / 토큰 관리")
 app.add_typer(setup_app, name="setup")
 app.add_typer(token_app, name="token")
 
-# Repository sub-command (direct import to avoid circular import)
-from vaultctl.commands.repo import app as repo_app
-app.add_typer(repo_app, name="repo", help="APT package management / APT 패키지 관리")
+# Import repo commands
+from vaultctl.commands import repo
+app.add_typer(repo.app, name="repo", help="APT package management / APT 패키지 관리")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

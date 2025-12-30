@@ -2,7 +2,6 @@
 """PyInstaller spec file for vaultctl."""
 
 import sys
-import os
 from pathlib import Path
 
 block_cipher = None
@@ -11,46 +10,38 @@ block_cipher = None
 src_path = Path("src")
 templates_path = src_path / "vaultctl" / "templates"
 
-# Hardcoded list - collect_submodules doesn't work reliably in CI
-# CI에서 collect_submodules가 제대로 작동하지 않으므로 하드코딩
-VAULTCTL_HIDDENIMPORTS = [
-    # Core modules
-    "vaultctl",
-    "vaultctl.__main__",
-    "vaultctl.cli",
-    "vaultctl.config",
-    "vaultctl.utils",
-    "vaultctl.vault_client",
-    # Command modules - CRITICAL
-    "vaultctl.commands",
-    "vaultctl.commands.admin",
-    "vaultctl.commands.compose", 
-    "vaultctl.commands.extended",
-    "vaultctl.commands.repo",
-    "vaultctl.commands.setup",
-]
-
-# Collect ALL .py files as data to ensure they're included
-# 모든 .py 파일을 데이터로 포함하여 확실히 번들링
-vaultctl_datas = []
-vaultctl_src = src_path / "vaultctl"
-for py_file in vaultctl_src.rglob("*.py"):
-    if "__pycache__" not in str(py_file):
-        rel_dir = py_file.parent.relative_to(src_path)
-        vaultctl_datas.append((str(py_file), str(rel_dir)))
-
-print(f"Including vaultctl source files: {[d[0] for d in vaultctl_datas]}")
-
 a = Analysis(
     [str(src_path / "vaultctl" / "__main__.py")],
     pathex=[str(src_path)],
     binaries=[],
     datas=[
-        # Include Jinja2 templates
+        # Include Jinja2 templates / Jinja2 템플릿 포함
         (str(templates_path), "vaultctl/templates"),
-    ] + vaultctl_datas,
-    hiddenimports=VAULTCTL_HIDDENIMPORTS + [
-        # External dependencies
+    ],
+    hiddenimports=[
+        # vaultctl 모듈
+        "vaultctl",
+        "vaultctl.cli",
+        "vaultctl.config",
+        "vaultctl.vault_client",
+        "vaultctl.utils",
+        "vaultctl.templates",
+        # commands package
+        "vaultctl.commands",
+        "vaultctl.commands.setup",
+        # admin subpackage
+        "vaultctl.commands.admin",
+        "vaultctl.commands.admin.secrets",
+        "vaultctl.commands.admin.token",
+        "vaultctl.commands.admin.credentials",
+        "vaultctl.commands.admin.setup",
+        "vaultctl.commands.admin.apt_setup",
+        "vaultctl.commands.admin.repo",
+        # user subpackage
+        "vaultctl.commands.user",
+        "vaultctl.commands.user.compose",
+        "vaultctl.commands.user.extended",
+        # 외부 의존성
         "typer",
         "rich",
         "httpx",
@@ -60,25 +51,25 @@ a = Analysis(
         "keyring",
         "jinja2",
         "ruamel.yaml",
-        # typer related
+        # typer 관련
         "typer.core",
         "typer.main",
         "click",
         "click.core",
-        # rich related
+        # rich 관련
         "rich.console",
         "rich.table",
         "rich.panel",
         "rich.progress",
         "rich.prompt",
-        # pydantic related
+        # pydantic 관련
         "pydantic.fields",
         "pydantic_settings.sources",
-        # jinja2 related
+        # jinja2 관련
         "jinja2.ext",
         "jinja2.loaders",
         "markupsafe",
-        # ruamel.yaml related
+        # ruamel.yaml 관련
         "ruamel.yaml.main",
         "ruamel.yaml.comments",
         "ruamel.yaml.clib",

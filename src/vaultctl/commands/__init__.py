@@ -1,7 +1,34 @@
-"""Command modules / 명령어 모듈."""
+"""vaultctl commands package.
+vaultctl 명령어 패키지.
 
-# Do NOT import anything here - causes circular import in PyInstaller bundle
-# PyInstaller 번들에서 circular import 발생하므로 여기서 아무것도 import하지 않음
-# All imports are handled directly in cli.py
+Structure:
+    commands/
+    ├── __init__.py          # This file
+    ├── admin/               # Admin commands (vaultctl admin ...)
+    │   ├── __init__.py      # CLI integration
+    │   ├── secrets.py       # list, get, put, delete, import, export
+    │   ├── token.py         # token status, token renew
+    │   ├── credentials.py   # credentials command
+    │   ├── setup.py         # setup vault, apt-server, apt-client
+    │   ├── apt_setup.py     # APT setup helpers
+    │   └── repo.py          # APT repo management
+    ├── user/                # User commands
+    │   ├── __init__.py
+    │   ├── compose.py       # Docker Compose integration
+    │   └── extended.py      # run, sh, scan, redact, watch
+    ├── setup.py             # User setup commands (init, systemd, etc.)
+    ├── compose.py           # Legacy - redirects to user/compose.py
+    ├── extended.py          # Legacy - redirects to user/extended.py
+    └── repo.py              # Legacy - redirects to admin/repo.py
+"""
 
-__all__ = ["admin", "compose", "extended", "repo"]
+from vaultctl.commands.admin import app as admin_app
+from vaultctl.commands.user import compose, extended
+from vaultctl.commands import setup
+
+__all__ = [
+    "admin_app",
+    "compose",
+    "extended",
+    "setup",
+]
