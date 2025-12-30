@@ -35,9 +35,10 @@ app = typer.Typer(
 )
 console = Console()
 
-# Admin sub-command
-from vaultctl.commands import admin, extended
-app.add_typer(admin.app, name="admin", help="Administrator commands / 관리자 명령어")
+# Admin sub-command (direct import to avoid circular import)
+from vaultctl.commands.admin import app as admin_app
+from vaultctl.commands.extended import run_command, shell_export, scan_secrets, redact_secrets, watch_and_restart
+app.add_typer(admin_app, name="admin", help="Administrator commands / 관리자 명령어")
 
 # Extended commands (user-facing)
 app.command("run")(extended.run_command)
