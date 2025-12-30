@@ -23,7 +23,6 @@ from rich.prompt import Prompt
 from rich.table import Table
 
 from vaultctl import __version__
-from vaultctl.commands import admin, extended, repo
 from vaultctl.config import settings
 from vaultctl.utils import format_duration, write_env_file
 from vaultctl.vault_client import VaultClient, VaultError
@@ -37,10 +36,8 @@ app = typer.Typer(
 console = Console()
 
 # Admin sub-command
+from vaultctl.commands import admin, extended
 app.add_typer(admin.app, name="admin", help="Administrator commands / 관리자 명령어")
-
-# Repository sub-command
-app.add_typer(repo.app, name="repo", help="APT package management / APT 패키지 관리")
 
 # Extended commands (user-facing)
 app.command("run")(extended.run_command)
