@@ -2,6 +2,20 @@
 
 [English](README.md) | **한국어**
 
+---
+
+## Sponsors
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/termius-logo-dark.svg" />
+  <source media="(prefers-color-scheme: light)" srcset="assets/termius-logo-light.svg" />
+  <img alt="Termius Logo" src="assets/termius-logo-light.svg" width="200" />
+</picture>
+
+Termius는 안전하고 신뢰할 수 있으며 협업이 가능한 SSH 클라이언트를 제공합니다.
+
+---
+
 LXC 환경을 위한 간단한 Vault CLI.
 
 Proxmox LXC 컨테이너의 시크릿을 HashiCorp Vault로 중앙 관리하는 CLI 도구입니다.
