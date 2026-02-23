@@ -10,7 +10,7 @@ include = ["src/vaultctl/templates/**/*.j2"]
 
 [tool.poetry.dependencies]
 python = ">=3.10,<3.14"
-typer = {extras = ["all"], version = "^0.24.0"}
+typer = {extras = ["all"], version = "^0.24.1"}
 rich = "^14.3.3"
 httpx = "^0.28.1"
 pydantic = "^2.12.5"
