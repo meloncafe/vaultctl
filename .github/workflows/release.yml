@@ -148,7 +148,7 @@ jobs:
       # Upload artifact for other jobs
       # 다른 작업용 아티팩트 업로드
       - name: Upload artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: deb-package
           path: ${{ steps.version.outputs.deb_name }}
@@ -174,7 +174,7 @@ jobs:
           sparse-checkout-cone-mode: false
 
       - name: Download artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: deb-package
 
