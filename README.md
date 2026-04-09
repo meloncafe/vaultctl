@@ -4,18 +4,6 @@
 
 ---
 
-## Sponsors
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/termius-logo-dark.svg" />
-  <source media="(prefers-color-scheme: light)" srcset="assets/termius-logo-light.svg" />
-  <img alt="Termius Logo" src="assets/termius-logo-light.svg" width="200" />
-</picture>
-
-Termius provides a secure, reliable, and collaborative SSH client.
-
----
-
 Simple Vault CLI for LXC environments.
 
 A CLI tool for centrally managing secrets in Proxmox LXC containers with HashiCorp Vault.
