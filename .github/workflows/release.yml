@@ -152,7 +152,7 @@ jobs:
         with:
           name: deb-package
           path: ${{ steps.version.outputs.deb_name }}
-          retention-days: 30
+          retention-days: 1
 
   # ═══════════════════════════════════════════════════════════════════════════
   # Release Job - Create GitHub Release (only on tag push)
