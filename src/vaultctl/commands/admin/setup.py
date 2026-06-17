@@ -95,9 +95,15 @@ def setup_vault(
     kv_path = Prompt.ask("Secret base path", default="proxmox/lxc")
 
     kv_path = kv_path.strip("/")
+    if not kv_path:
+        console.print("[red]✗[/red] Secret base path must not be empty.")
+        raise typer.Exit(1)
 
-    # The policy wildcard is scoped to the first path segment (unchanged behavior).
-    # Keep the base path single-segment (e.g. "apps") so the scope matches exactly.
+    # The policy wildcard is scoped to the FIRST path segment only. With a
+    # single-segment base (e.g. "apps") the scope matches the base exactly. With
+    # a multi-segment base (e.g. "proxmox/lxc") the policy is WIDER than the base
+    # — it grants the whole first segment (kv/data/proxmox/*), not just the base.
+    # Keep the base single-segment unless you intend that wider scope.
     policy_path = kv_path.split("/")[0] if "/" in kv_path else kv_path
 
     console.print(Panel.fit(
