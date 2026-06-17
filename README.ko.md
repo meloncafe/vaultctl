@@ -85,7 +85,7 @@ flowchart LR
 ### 옵션 1: GitHub에서 바로 설치 (권장)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/meloncafe/vaultctl/main/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/meloncafe/vaultctl/main/scripts/install.sh | bash
 ```
 
 ### 옵션 2: 개인 APT 서버에서 설치
