@@ -8,6 +8,8 @@
 # script-installed machines track the repo's latest source — not a prebuilt
 # package.
 #
+# Run WITHOUT sudo — this installs into your user account (~/.local).
+#
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/meloncafe/vaultctl/main/scripts/install.sh | bash
 #
@@ -28,6 +30,17 @@ info() { echo -e "${GREEN}[vaultctl]${NC} $*"; }
 warn() { echo -e "${YELLOW}[vaultctl]${NC} $*" >&2; }
 err()  { echo -e "${RED}[vaultctl]${NC} $*" >&2; exit 1; }
 
+# ── do not run under sudo ────────────────────────────────────────────────────
+# This is a user-level install. Running it through sudo installs into root's
+# home and, worse, sudo's restricted PATH (secure_path) can hide a user's
+# python3.14 — causing a fall-back to the system python and a version-pin
+# failure. Refuse sudo and point at the correct command.
+if [ -n "${SUDO_USER:-}" ] && [ "$(id -u)" -eq 0 ]; then
+  err "Don't run this with sudo — it installs into your user account (~/.local), not the system.
+       Re-run without sudo:
+         curl -fsSL https://raw.githubusercontent.com/${REPO}/${REF}/scripts/install.sh | bash"
+fi
+
 # ── dependencies ─────────────────────────────────────────────────────────────
 command -v git >/dev/null 2>&1 || err "git is required. Install git and retry."
 
@@ -36,13 +49,17 @@ PYTHON=""
 for cand in python3.14 python3; do
   if command -v "$cand" >/dev/null 2>&1; then PYTHON="$cand"; break; fi
 done
-[ -n "$PYTHON" ] || err "python3 (3.14) is required."
+[ -n "$PYTHON" ] || err "python3 is required."
 pyver="$("$PYTHON" -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null || echo "")"
 if [ "$pyver" != "3.14" ]; then
-  warn "vaultctl targets Python 3.14 (found ${pyver:-unknown}); install may fail. Install python3.14 if so."
+  err "vaultctl requires Python 3.14 (found ${pyver:-unknown}).
+       Install it and re-run, e.g. on Debian/Ubuntu:
+         sudo apt install python3.14 python3.14-venv     # may need the deadsnakes PPA
+       Then (without sudo):
+         curl -fsSL https://raw.githubusercontent.com/${REPO}/${REF}/scripts/install.sh | bash"
 fi
 "$PYTHON" -m venv --help >/dev/null 2>&1 || \
-  err "python venv module missing. On Debian/Ubuntu: sudo apt install python3-venv"
+  err "python venv module missing. On Debian/Ubuntu: sudo apt install python3.14-venv"
 
 # ── clone or fast-forward the checkout ───────────────────────────────────────
 mkdir -p "$(dirname "$SHARE_DIR")"
@@ -60,7 +77,7 @@ fi
 
 # ── venv + editable install ──────────────────────────────────────────────────
 if [ ! -d "$VENV" ]; then
-  info "Creating venv ..."
+  info "Creating venv ($PYTHON, $pyver) ..."
   "$PYTHON" -m venv "$VENV"
 fi
 info "Installing (this can take a moment) ..."
