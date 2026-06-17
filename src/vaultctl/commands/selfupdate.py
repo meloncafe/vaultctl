@@ -11,7 +11,8 @@ Design notes:
     - `version` does a best-effort, network-tolerant update check: a short
       `git fetch` and a commits-behind count, silent on offline/unreachable —
       like dctl's `version`/`update_count`.
-    - Stdlib + git/apt only; no new Python dependencies.
+    - Uses existing CLI dependencies (typer, rich); no *new* Python dependencies
+      beyond vaultctl's existing stack.
 """
 
 import os
