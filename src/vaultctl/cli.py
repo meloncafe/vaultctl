@@ -30,6 +30,7 @@ from vaultctl import __version__
 from vaultctl.commands.admin import app as admin_app
 from vaultctl.commands.user.compose import app as compose_app
 from vaultctl.commands.user import extended
+from vaultctl.commands import selfupdate
 from vaultctl.config import settings
 from vaultctl.utils import format_duration, write_env_file, load_env_file
 from vaultctl.vault_client import VaultClient, VaultError
@@ -58,6 +59,10 @@ app.command("sh")(extended.shell_export)
 app.command("scan")(extended.scan_secrets)
 app.command("redact")(extended.redact_secrets)
 app.command("watch")(extended.watch_and_restart)
+
+# Self-update / version commands
+app.command("version")(selfupdate.version_command)
+app.command("self-update")(selfupdate.self_update_command)
 
 
 def _get_authenticated_client() -> VaultClient:
