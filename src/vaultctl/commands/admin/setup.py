@@ -66,26 +66,36 @@ def setup_vault(
     # Generate Secret ID only mode
     if generate_secret:
         console.print(f"\n[bold]Generating new Secret ID for '{role}'...[/bold]")
+
+        # Confirm the role exists. Only a 404 means "not found"; surface other
+        # errors (403/500/...) as-is instead of mislabeling them.
         try:
             client._request("GET", f"auth/approle/role/{role}")
+        except VaultError as e:
+            if e.status_code == 404:
+                console.print(f"[red]✗[/red] AppRole '{role}' not found. Run without -g to create it.")
+            else:
+                console.print(f"[red]✗[/red] Failed to read AppRole '{role}': {e.message}")
+            raise typer.Exit(1)
 
+        # The role exists; a failure here is a real generation error, not "missing".
+        try:
             role_id_resp = client._request("GET", f"auth/approle/role/{role}/role-id")
             role_id = role_id_resp.get("data", {}).get("role_id")
 
             secret_id_resp = client._request("POST", f"auth/approle/role/{role}/secret-id")
             secret_id = secret_id_resp.get("data", {}).get("secret_id")
-
-            console.print(f"\n[yellow]{'─' * 60}[/yellow]")
-            console.print(f"[yellow]Save these credentials securely! (role: {role})[/yellow]")
-            console.print(f"[yellow]{'─' * 60}[/yellow]")
-            console.print(f"\n  Role ID:    {role_id}")
-            console.print(f"  Secret ID:  {secret_id}  [dim](newly generated)[/dim]")
-            console.print(f"\n[yellow]{'─' * 60}[/yellow]")
-            return
-
-        except VaultError:
-            console.print(f"[red]✗[/red] AppRole '{role}' not found. Run without -g to create it.")
+        except VaultError as e:
+            console.print(f"[red]✗[/red] Failed to generate Secret ID for '{role}': {e.message}")
             raise typer.Exit(1)
+
+        console.print(f"\n[yellow]{'─' * 60}[/yellow]")
+        console.print(f"[yellow]Save these credentials securely! (role: {role})[/yellow]")
+        console.print(f"[yellow]{'─' * 60}[/yellow]")
+        console.print(f"\n  Role ID:    {role_id}")
+        console.print(f"  Secret ID:  {secret_id}  [dim](newly generated)[/dim]")
+        console.print(f"\n[yellow]{'─' * 60}[/yellow]")
+        return
 
     # Full setup - get path configuration
     console.print("\n[bold]KV Path Configuration[/bold]")
