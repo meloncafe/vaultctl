@@ -1,157 +1,98 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# vaultctl installer - Download and install latest release from GitHub
-# vaultctl 설치 스크립트 - GitHub에서 최신 릴리스 다운로드 및 설치
+# vaultctl installer (source / git)
 #
-# Usage / 사용법:
-#   curl -fsSL https://raw.githubusercontent.com/meloncafe/vaultctl/main/scripts/install.sh | sudo bash
-#   wget -qO- https://raw.githubusercontent.com/meloncafe/vaultctl/main/scripts/install.sh | sudo bash
+# Clones the repository into a stable location and installs it into a
+# self-contained venv, symlinking `vaultctl` (and `vc`) onto your PATH. This is
+# re-runnable and is what `vaultctl self-update` fast-forwards (dctl-style), so
+# script-installed machines track the repo's latest source — not a prebuilt
+# package.
 #
-# Options / 옵션:
-#   VERSION=0.1.0 ... | sudo bash   # Install specific version / 특정 버전 설치
+# Usage:
+#   curl -fsSL https://raw.githubusercontent.com/meloncafe/vaultctl/main/scripts/install.sh | bash
+#
+# Options (env):
+#   VAULTCTL_REPO=owner/repo    # default: meloncafe/vaultctl
+#   VAULTCTL_REF=main           # branch / tag / sha to install
 # ─────────────────────────────────────────────────────────────────────────────
-
 set -euo pipefail
 
-# Configuration / 설정
-REPO="${REPO:-meloncafe/vaultctl}"
-PACKAGE_NAME="vaultctl"
-ARCH="amd64"
-TMP_DIR=$(mktemp -d)
+REPO="${VAULTCTL_REPO:-meloncafe/vaultctl}"
+REF="${VAULTCTL_REF:-main}"
+SHARE_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/vaultctl"
+BIN_DIR="$HOME/.local/bin"
+VENV="$SHARE_DIR/.venv"
 
-# Colors / 색상
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
+info() { echo -e "${GREEN}[vaultctl]${NC} $*"; }
+warn() { echo -e "${YELLOW}[vaultctl]${NC} $*" >&2; }
+err()  { echo -e "${RED}[vaultctl]${NC} $*" >&2; exit 1; }
 
-# Cleanup on exit / 종료 시 정리
-cleanup() {
-    rm -rf "$TMP_DIR"
-}
-trap cleanup EXIT
+# ── dependencies ─────────────────────────────────────────────────────────────
+command -v git >/dev/null 2>&1 || err "git is required. Install git and retry."
 
-# Print functions / 출력 함수
-info() { echo -e "${GREEN}[INFO]${NC} $*"; }
-warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
-error() { echo -e "${RED}[ERROR]${NC} $*" >&2; exit 1; }
+# vaultctl targets Python 3.14; prefer an exact python3.14, else fall back.
+PYTHON=""
+for cand in python3.14 python3; do
+  if command -v "$cand" >/dev/null 2>&1; then PYTHON="$cand"; break; fi
+done
+[ -n "$PYTHON" ] || err "python3 (3.14) is required."
+pyver="$("$PYTHON" -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null || echo "")"
+if [ "$pyver" != "3.14" ]; then
+  warn "vaultctl targets Python 3.14 (found ${pyver:-unknown}); install may fail. Install python3.14 if so."
+fi
+"$PYTHON" -m venv --help >/dev/null 2>&1 || \
+  err "python venv module missing. On Debian/Ubuntu: sudo apt install python3-venv"
 
-# Check root / root 확인
-check_root() {
-    if [[ $EUID -ne 0 ]]; then
-        error "This script must be run as root. Use: sudo bash install.sh"
-    fi
-}
+# ── clone or fast-forward the checkout ───────────────────────────────────────
+mkdir -p "$(dirname "$SHARE_DIR")"
+if [ -d "$SHARE_DIR/.git" ]; then
+  info "Updating source in $SHARE_DIR ..."
+  git -C "$SHARE_DIR" fetch --quiet origin "$REF" || warn "fetch failed; using the existing checkout"
+  git -C "$SHARE_DIR" checkout --quiet "$REF" 2>/dev/null || true
+  git -C "$SHARE_DIR" merge --ff-only "origin/$REF" --quiet 2>/dev/null || \
+    warn "could not fast-forward (local changes?); installing the current checkout"
+else
+  info "Cloning $REPO ($REF) into $SHARE_DIR ..."
+  git clone --quiet "https://github.com/$REPO.git" "$SHARE_DIR"
+  git -C "$SHARE_DIR" checkout --quiet "$REF" 2>/dev/null || true
+fi
 
-# Check dependencies / 의존성 확인
-check_deps() {
-    local missing=()
-    for cmd in curl jq; do
-        if ! command -v "$cmd" &> /dev/null; then
-            missing+=("$cmd")
-        fi
+# ── venv + editable install ──────────────────────────────────────────────────
+if [ ! -d "$VENV" ]; then
+  info "Creating venv ..."
+  "$PYTHON" -m venv "$VENV"
+fi
+info "Installing (this can take a moment) ..."
+"$VENV/bin/pip" install --quiet --upgrade pip || warn "pip self-upgrade failed; continuing"
+"$VENV/bin/pip" install --quiet -e "$SHARE_DIR" || err "install failed (see pip output above)"
+
+# ── symlink onto PATH ────────────────────────────────────────────────────────
+mkdir -p "$BIN_DIR"
+ln -sf "$VENV/bin/vaultctl" "$BIN_DIR/vaultctl"
+ln -sf "$VENV/bin/vc" "$BIN_DIR/vc" 2>/dev/null || true
+
+# ── ensure ~/.local/bin is on PATH ───────────────────────────────────────────
+case ":$PATH:" in
+  *":$BIN_DIR:"*) ;;
+  *)
+    added=""
+    for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+      [ -f "$rc" ] || continue
+      if ! grep -q 'vaultctl: add ~/.local/bin to PATH' "$rc" 2>/dev/null; then
+        {
+          echo ''
+          echo '# vaultctl: add ~/.local/bin to PATH'
+          echo 'export PATH="$HOME/.local/bin:$PATH"'
+        } >> "$rc"
+        added="$rc"
+      fi
     done
-    
-    if [[ ${#missing[@]} -gt 0 ]]; then
-        info "Installing missing dependencies: ${missing[*]}"
-        apt-get update -qq
-        apt-get install -y -qq "${missing[@]}"
-    fi
-}
+    [ -n "$added" ] && warn "Added ~/.local/bin to PATH in $added — open a new shell (or 'source' it)."
+    ;;
+esac
 
-# Get latest version from GitHub / GitHub에서 최신 버전 가져오기
-get_latest_version() {
-    local api_url="https://api.github.com/repos/${REPO}/releases/latest"
-    local response
-    local version
-    
-    response=$(curl -fsSL "$api_url" 2>&1) || {
-        echo "" 
-        return 1
-    }
-    
-    version=$(echo "$response" | jq -r '.tag_name' 2>/dev/null | sed 's/^v//')
-    
-    if [[ -z "$version" || "$version" == "null" ]]; then
-        echo ""
-        return 1
-    fi
-    
-    echo "$version"
-}
-
-# Download and install / 다운로드 및 설치
-install_vaultctl() {
-    local version="${VERSION:-}"
-    
-    if [[ -z "$version" ]]; then
-        version=$(get_latest_version)
-        if [[ -z "$version" ]]; then
-            error "Failed to get latest version from GitHub. No releases found for ${REPO}"
-        fi
-    fi
-    local deb_name="${PACKAGE_NAME}_${version}_${ARCH}.deb"
-    local download_url="https://github.com/${REPO}/releases/download/v${version}/${deb_name}"
-    
-    info "Installing vaultctl v${version}..."
-    info "Download URL: ${download_url}"
-    
-    # Download / 다운로드
-    info "Downloading ${deb_name}..."
-    if ! curl -fsSL -o "${TMP_DIR}/${deb_name}" "$download_url"; then
-        error "Failed to download ${deb_name}"
-    fi
-    
-    # Verify download / 다운로드 확인
-    if [[ ! -f "${TMP_DIR}/${deb_name}" ]]; then
-        error "Downloaded file not found"
-    fi
-    
-    # Fix permissions for _apt user / _apt 사용자 권한 설정
-    chmod 755 "$TMP_DIR"
-    chmod 644 "${TMP_DIR}/${deb_name}"
-    
-    # Install / 설치
-    info "Installing package..."
-    apt-get install -y "${TMP_DIR}/${deb_name}"
-    
-    # Verify installation / 설치 확인
-    if command -v vaultctl &> /dev/null; then
-        local installed_version
-        installed_version=$(vaultctl --version 2>/dev/null || echo "unknown")
-        info "Successfully installed ${installed_version}"
-    else
-        error "Installation failed - vaultctl not found in PATH"
-    fi
-}
-
-# Post-install instructions / 설치 후 안내
-show_next_steps() {
-    echo ""
-    info "Installation complete! Next steps:"
-    echo ""
-    echo "  For administrators (one-time Vault setup):"
-    echo "     vaultctl admin setup vault"
-    echo ""
-    echo "  For each LXC container:"
-    echo "     vaultctl init"
-    echo ""
-    echo "  Then use secrets:"
-    echo "     vaultctl env 100              # Generate .env"
-    echo "     vaultctl compose init 100     # Docker Compose setup"
-    echo "     vaultctl status               # Check status"
-    echo ""
-}
-
-# Main / 메인
-main() {
-    info "vaultctl installer"
-    echo ""
-    
-    check_root
-    check_deps
-    install_vaultctl
-    show_next_steps
-}
-
-main "$@"
+ver="$("$BIN_DIR/vaultctl" --version 2>/dev/null || echo 'vaultctl')"
+info "Installed: $ver"
+info "Update later with: vaultctl self-update"
+info "Next: vaultctl --help   (admins: vaultctl admin setup vault)"
