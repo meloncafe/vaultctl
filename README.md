@@ -85,7 +85,7 @@ flowchart LR
 ### Option 1: Quick Install from GitHub (Recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/meloncafe/vaultctl/main/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/meloncafe/vaultctl/main/scripts/install.sh | bash
 ```
 
 ### Option 2: Install from Private APT Server
