@@ -218,8 +218,12 @@ path "auth/token/renew-self" {{
             client._request("GET", f"auth/approle/role/{r_name}")
             exists = True
             console.print(f"   [green]✓[/green] Already exists: {r_name}")
-        except VaultError:
-            pass
+        except VaultError as e:
+            # Only a 404 means the role is absent; surface anything else
+            # (e.g. 403/500) instead of silently proceeding to create it.
+            if e.status_code != 404:
+                console.print(f"   [red]✗[/red] Failed to read AppRole '{r_name}': {e.message}")
+                raise typer.Exit(1)
 
         if not exists:
             try:
