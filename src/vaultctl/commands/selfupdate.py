@@ -1,156 +1,110 @@
 """Self-update / version commands for vaultctl.
 
-Mirrors dctl's `version` / `self-update` UX, adapted to vaultctl's actual
-distribution. vaultctl is a public repo that ships two supported install
-paths, and self-update handles both:
-
-    - apt:    installed from an APT repository (`apt install vaultctl`); the
-              native update is `apt-get install --only-upgrade vaultctl`.
-    - github: installed from a GitHub release .deb via scripts/install.sh; the
-              update is "download the latest release .deb and install it".
-
-`self-update --method auto` (default) prefers the native apt path when an APT
-repo offers a newer candidate, otherwise falls back to the GitHub release.
+Ported from dctl's git-based self-update, adapted to vaultctl's source install.
+scripts/install.sh clones the repo into ~/.local/share/vaultctl and installs it
+editable into a venv; `self-update` fast-forwards that checkout (with the same
+uncommitted / diverged / fast-forward safety as dctl) and reinstalls. When
+vaultctl was installed from an APT repository instead (no source checkout), it
+falls back to `apt-get --only-upgrade`.
 
 Design notes:
-    - `version` does a best-effort, network-tolerant update check. It never
-      hangs or errors on offline/unreachable networks (short timeout, all
-      failures swallowed) — like dctl's `version`.
-    - `self-update` is explicit: it reports a real error if it cannot resolve a
-      target, download the asset, or run apt.
-    - Stdlib only (urllib/json/subprocess); no new dependencies.
-    - Public repo, so no token is needed. A GITHUB_TOKEN, if set, is used only
-      to relax API rate limits.
+    - `version` does a best-effort, network-tolerant update check: a short
+      `git fetch` and a commits-behind count, silent on offline/unreachable —
+      like dctl's `version`/`update_count`.
+    - Stdlib + git/apt only; no new Python dependencies.
 """
 
-import json
 import os
 import shutil
 import subprocess
-import tempfile
-import urllib.error
-import urllib.request
+import sys
+from pathlib import Path
 from typing import Optional
 
 import typer
 from rich.console import Console
 
+import vaultctl
 from vaultctl import __version__
 
 console = Console()
 
-REPO = os.environ.get("VAULTCTL_REPO", "meloncafe/vaultctl")
 PACKAGE = "vaultctl"
-ARCH = "amd64"
-_API_LATEST = f"https://api.github.com/repos/{REPO}/releases/latest"
-# Keep the check timeout short so an unreachable network (offline, intranet
-# with no route to GitHub) fails fast and silently rather than hanging.
-_CHECK_TIMEOUT = 5
+_FETCH_TIMEOUT = 5  # seconds; keep the check fast so offline never hangs
+_GIT_ENV = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}  # never prompt for creds
 
 
-# ── version helpers ──────────────────────────────────────────────────────────
+# ── checkout / git helpers ───────────────────────────────────────────────────
 
-def _github_token() -> Optional[str]:
-    """Optional GitHub token — only to relax API rate limits (repo is public)."""
-    return os.environ.get("VAULTCTL_GITHUB_TOKEN") or os.environ.get("GITHUB_TOKEN")
+def _checkout_dir() -> Optional[Path]:
+    """The git checkout backing the running vaultctl, or None.
 
-
-def _request(url: str, accept: str) -> urllib.request.Request:
-    req = urllib.request.Request(url)
-    req.add_header("Accept", accept)
-    req.add_header("User-Agent", f"vaultctl/{__version__}")
-    token = _github_token()
-    if token:
-        req.add_header("Authorization", f"Bearer {token}")
-    return req
-
-
-def _parse_version(v: str) -> tuple:
-    """Best-effort version tuple for comparison.
-
-    Trims a leading 'v', drops build metadata, and treats a pre-release suffix
-    (e.g. '-dev', '-rc1') as *older* than the same numeric release. Debian
-    package revisions (e.g. '0.6.0-1') are compared on their upstream part; for
-    exact apt decisions we defer to apt itself, not this parser.
-    """
-    v = v.strip().lstrip("v")
-    core = v.split("-")[0].split("+")[0]
-    parts = []
-    for p in core.split("."):
-        try:
-            parts.append(int(p))
-        except ValueError:
-            parts.append(0)
-    while len(parts) < 3:
-        parts.append(0)
-    is_pre = 1 if "-" in v else 0
-    return (parts[0], parts[1], parts[2], -is_pre)
-
-
-def _is_newer(latest: str, current: str) -> bool:
-    return _parse_version(latest) > _parse_version(current)
-
-
-def latest_version(timeout: int = _CHECK_TIMEOUT) -> Optional[str]:
-    """Latest GitHub release version (tag without leading 'v'), or None.
-
-    Never raises — safe to call from `version`. Returns None when offline, when
-    there are no releases, or on any HTTP/parse error.
+    For a source install (scripts/install.sh, editable) vaultctl.__file__ lives
+    under the cloned tree, so a `.git` ancestor exists. For an apt/.deb install
+    it lives in site-packages with no `.git` above it → None.
     """
     try:
-        req = _request(_API_LATEST, "application/vnd.github+json")
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-        tag = (data.get("tag_name") or "").lstrip("v")
-        return tag or None
+        start = Path(vaultctl.__file__).resolve()
     except Exception:
         return None
+    for parent in start.parents:
+        if (parent / ".git").is_dir():
+            return parent
+    return None
 
 
-def _apt_installed_candidate() -> tuple:
-    """Return (installed, candidate) from `apt-cache policy vaultctl`.
+def _git(cwd: Path, *args: str, timeout: Optional[int] = None) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["git", "-C", str(cwd), *args],
+        capture_output=True, text=True, timeout=timeout, env=_GIT_ENV,
+    )
 
-    Either may be None (package unknown to apt, or no candidate). Never raises.
-    """
-    if not shutil.which("apt-cache"):
-        return None, None
+
+def _git_out(cwd: Path, *args: str) -> str:
+    r = _git(cwd, *args)
+    return r.stdout.strip() if r.returncode == 0 else ""
+
+
+def _current_branch(cwd: Path) -> Optional[str]:
+    return _git_out(cwd, "rev-parse", "--abbrev-ref", "HEAD") or None
+
+
+def _commits_behind(cwd: Path, timeout: int = _FETCH_TIMEOUT) -> Optional[int]:
+    """How many commits upstream is ahead. None on any failure/offline (silent)."""
+    if not shutil.which("git"):
+        return None
+    branch = _current_branch(cwd)
+    if not branch:
+        return None
     try:
-        out = subprocess.run(
-            ["apt-cache", "policy", PACKAGE],
-            capture_output=True, text=True, timeout=15,
-        )
+        f = _git(cwd, "fetch", "--quiet", "origin", branch, timeout=timeout)
     except Exception:
-        return None, None
-    if out.returncode != 0:
-        return None, None
-
-    installed = candidate = None
-    for line in out.stdout.splitlines():
-        s = line.strip()
-        if s.startswith("Installed:"):
-            val = s.split(":", 1)[1].strip()
-            installed = None if val in ("(none)", "") else val
-        elif s.startswith("Candidate:"):
-            val = s.split(":", 1)[1].strip()
-            candidate = None if val in ("(none)", "") else val
-    return installed, candidate
+        return None
+    if f.returncode != 0:
+        return None
+    count = _git_out(cwd, "rev-list", "--count", f"HEAD..origin/{branch}")
+    return int(count) if count.isdigit() else None
 
 
 # ── commands ─────────────────────────────────────────────────────────────────
 
 def version_command():
     """Print the version, and whether an update is available (if reachable)."""
-    console.print(f"vaultctl {__version__}")
-    latest = latest_version()
-    if latest and _is_newer(latest, __version__):
-        console.print(
-            f"[yellow]![/yellow] an update is available "
-            f"({__version__} → {latest}) — run 'vaultctl self-update'"
-        )
+    checkout = _checkout_dir()
+    if checkout:
+        sha = _git_out(checkout, "rev-parse", "--short", "HEAD")
+        console.print(f"vaultctl {__version__}" + (f" ({sha})" if sha else ""))
+        behind = _commits_behind(checkout)
+        if behind:
+            console.print(
+                f"[yellow]![/yellow] an update is available "
+                f"({behind} commit(s) behind) — run 'vaultctl self-update'"
+            )
+    else:
+        console.print(f"vaultctl {__version__}")
 
 
 def _sudo_prefix() -> list:
-    """[] when root, ['sudo'] otherwise; aborts if neither is possible."""
     if os.geteuid() == 0:
         return []
     if not shutil.which("sudo"):
@@ -159,134 +113,136 @@ def _sudo_prefix() -> list:
     return ["sudo"]
 
 
-def _update_via_apt(candidate: Optional[str]):
-    """Native apt upgrade path (APT-repo installs)."""
-    if not shutil.which("apt-get"):
-        console.print("[red]✗[/red] apt-get not found — the apt method needs a Debian-family host.")
+def _update_via_git(checkout: Path, check: bool):
+    """Fast-forward the source checkout and reinstall (dctl-style)."""
+    if not shutil.which("git"):
+        console.print("[red]✗[/red] git not found — required to update a source checkout.")
         raise typer.Exit(1)
 
-    prefix = _sudo_prefix()
-    console.print("[dim]Refreshing apt and upgrading vaultctl...[/dim]")
-    if subprocess.run(prefix + ["apt-get", "update"]).returncode != 0:
-        console.print("[yellow]![/yellow] apt-get update reported an error; continuing.")
-    result = subprocess.run(prefix + ["apt-get", "install", "--only-upgrade", "-y", PACKAGE])
-    if result.returncode != 0:
-        console.print(f"[red]✗[/red] apt-get install failed (exit {result.returncode}).")
+    # Ignore exec-bit (chmod) diffs so file-mode changes never block the merge.
+    _git(checkout, "config", "core.fileMode", "false")
+
+    console.print("[dim]Checking for updates…[/dim]")
+    branch = _current_branch(checkout)
+    if not branch:
+        console.print("[red]✗[/red] Could not determine the current branch.")
         raise typer.Exit(1)
-    tgt = f" ({candidate})" if candidate else ""
-    console.print(f"[green]✓[/green] apt upgrade complete{tgt}. Run 'vaultctl version' to confirm.")
+    upstream = f"origin/{branch}"
 
-
-def _update_via_github(target: str):
-    """GitHub-release path: download the .deb and install it (like install.sh)."""
-    if not shutil.which("apt-get"):
-        console.print("[red]✗[/red] apt-get not found — installing a release .deb needs a Debian-family host.")
-        console.print("  Reinstall from source (poetry/pip) instead.")
+    f = _git(checkout, "fetch", "--quiet", "origin", branch, timeout=30)
+    if f.returncode != 0:
+        console.print(f"[red]✗[/red] Could not reach origin: {f.stderr.strip() or 'fetch failed'}")
         raise typer.Exit(1)
 
-    deb_name = f"{PACKAGE}_{target}_{ARCH}.deb"
-    url = f"https://github.com/{REPO}/releases/download/v{target}/{deb_name}"
+    local = _git_out(checkout, "rev-parse", "HEAD")
+    remote = _git_out(checkout, "rev-parse", upstream)
+    if not remote:
+        console.print(f"[red]✗[/red] No upstream '{upstream}'. Reinstall via scripts/install.sh.")
+        raise typer.Exit(1)
+    if local == remote:
+        console.print(f"[green]✓[/green] Already up to date (vaultctl {__version__}).")
+        return
 
-    tmpdir = tempfile.mkdtemp(prefix="vaultctl-update-")
-    deb_path = os.path.join(tmpdir, deb_name)
-    try:
-        console.print(f"[dim]Downloading {deb_name}...[/dim]")
-        try:
-            req = _request(url, "application/octet-stream")
-            with urllib.request.urlopen(req, timeout=60) as resp, open(deb_path, "wb") as fh:
-                shutil.copyfileobj(resp, fh)
-        except urllib.error.HTTPError as e:
-            console.print(f"[red]✗[/red] Download failed (HTTP {e.code}): {url}")
-            if e.code == 404:
-                console.print(f"  No release asset '{deb_name}'. Check the version or the release.")
+    behind = _git_out(checkout, "rev-list", "--count", f"HEAD..{upstream}")
+    if check:
+        console.print(f"[yellow]![/yellow] Update available: {behind} commit(s) behind on {branch}.")
+        return
+
+    # Uncommitted local changes block any update path; surface them first.
+    if _git_out(checkout, "status", "--porcelain"):
+        console.print(f"[red]✗[/red] Uncommitted changes in {checkout}.")
+        console.print(f"  Inspect: git -C {checkout} status")
+        console.print(f"  Discard: git -C {checkout} checkout -- .   then retry")
+        raise typer.Exit(1)
+
+    base = _git_out(checkout, "merge-base", "HEAD", upstream)
+    if base == local:
+        console.print(f"[dim]Applying {behind} new commit(s)…[/dim]")
+        m = _git(checkout, "merge", "--ff-only", upstream, "--quiet")
+        if m.returncode != 0:
+            console.print(f"[red]✗[/red] Fast-forward failed: {m.stderr.strip()}")
             raise typer.Exit(1)
-        except Exception as e:
-            console.print(f"[red]✗[/red] Download failed: {e}")
-            raise typer.Exit(1)
+    elif base == remote:
+        console.print(f"[red]✗[/red] {checkout} has local commits not on {upstream}.")
+        console.print(f"  To discard them: git -C {checkout} reset --hard {upstream}")
+        raise typer.Exit(1)
+    else:
+        console.print(f"[red]✗[/red] Local history diverged from {upstream} (force-push?).")
+        console.print(f"  To match upstream: git -C {checkout} reset --hard {upstream}")
+        raise typer.Exit(1)
 
+    # Reinstall into the running venv to pick up dependency / entry-point changes.
+    console.print("[dim]Reinstalling…[/dim]")
+    r = subprocess.run(
+        [sys.executable, "-m", "pip", "install", "--quiet", "-e", str(checkout)],
+        capture_output=True, text=True,
+    )
+    if r.returncode != 0:
+        console.print("[red]✗[/red] Reinstall failed:")
+        console.print((r.stderr.strip() or r.stdout.strip())[:2000])
+        console.print(f"  Recover: re-run scripts/install.sh, or "
+                      f"'{sys.executable} -m pip install -e {checkout}'")
+        raise typer.Exit(1)
+
+    new_sha = _git_out(checkout, "rev-parse", "--short", "HEAD")
+    console.print(f"[green]✓[/green] Updated to {branch}@{new_sha}. Run 'vaultctl version' to confirm.")
+
+
+def _update_via_apt(check: bool):
+    """apt-repo install path: upgrade the package."""
+    if not shutil.which("apt-get"):
+        console.print("[red]✗[/red] Not a source checkout and apt-get is unavailable — cannot self-update.")
+        console.print("  Reinstall via scripts/install.sh.")
+        raise typer.Exit(1)
+
+    installed = candidate = None
+    if shutil.which("apt-cache"):
         try:
-            os.chmod(deb_path, 0o644)
-        except OSError:
+            out = subprocess.run(["apt-cache", "policy", PACKAGE], capture_output=True, text=True, timeout=15)
+            for line in out.stdout.splitlines():
+                s = line.strip()
+                if s.startswith("Installed:"):
+                    installed = s.split(":", 1)[1].strip()
+                elif s.startswith("Candidate:"):
+                    candidate = s.split(":", 1)[1].strip()
+        except Exception:
             pass
 
-        prefix = _sudo_prefix()
-        console.print("[dim]Installing package...[/dim]")
-        result = subprocess.run(prefix + ["apt-get", "install", "-y", deb_path])
-        if result.returncode != 0:
-            console.print(f"[red]✗[/red] apt-get install failed (exit {result.returncode}).")
-            raise typer.Exit(1)
-        console.print(f"[green]✓[/green] Updated to vaultctl {target}.")
-    finally:
-        shutil.rmtree(tmpdir, ignore_errors=True)
+    if installed in (None, "(none)"):
+        console.print("[red]✗[/red] vaultctl is neither a source checkout nor an apt package.")
+        console.print("  Reinstall via scripts/install.sh.")
+        raise typer.Exit(1)
+
+    if candidate and candidate == installed:
+        console.print(f"[green]✓[/green] Already up to date via apt (vaultctl {installed}).")
+        return
+    if check:
+        tgt = f" {installed} → {candidate}" if candidate else ""
+        console.print(f"[yellow]![/yellow] apt update available:{tgt} (run without --check to upgrade)")
+        return
+
+    prefix = _sudo_prefix()
+    console.print("[dim]Upgrading via apt…[/dim]")
+    if subprocess.run(prefix + ["apt-get", "update"]).returncode != 0:
+        console.print("[yellow]![/yellow] apt-get update reported an error; continuing.")
+    r = subprocess.run(prefix + ["apt-get", "install", "--only-upgrade", "-y", PACKAGE])
+    if r.returncode != 0:
+        console.print(f"[red]✗[/red] apt-get install failed (exit {r.returncode}).")
+        raise typer.Exit(1)
+    console.print("[green]✓[/green] apt upgrade complete. Run 'vaultctl version' to confirm.")
 
 
 def self_update_command(
-    method: str = typer.Option("auto", "--method", "-m", help="Update source: auto | apt | github"),
     check: bool = typer.Option(False, "--check", help="Only check for an update; do not install"),
-    target_version: Optional[str] = typer.Option(None, "--version", help="Install a specific version (github method)"),
 ):
-    """Update vaultctl to the latest release.
+    """Update vaultctl to the latest version.
 
-    auto (default) uses the native apt upgrade when an APT repo offers a newer
-    version, otherwise downloads the latest GitHub release .deb. Force a path
-    with --method apt|github. --version pins a specific GitHub release.
+    For a source install (scripts/install.sh) this fast-forwards the checkout
+    and reinstalls (dctl-style). For an apt-repo install it runs apt-get
+    --only-upgrade instead. The install type is detected automatically.
     """
-    if method not in ("auto", "apt", "github"):
-        console.print("[red]✗[/red] --method must be one of: auto, apt, github")
-        raise typer.Exit(1)
-
-    # A pinned version is only meaningful for the GitHub release path.
-    if target_version:
-        method = "github"
-
-    # Resolve what each path could offer.
-    gh_target = target_version.lstrip("v") if target_version else latest_version(timeout=10)
-    gh_avail = bool(gh_target) and (target_version is not None or _is_newer(gh_target, __version__))
-
-    apt_installed, apt_candidate = _apt_installed_candidate()
-    apt_avail = apt_candidate is not None and apt_candidate != apt_installed
-
-    # Decide the path.
-    if method == "apt":
-        if apt_installed is None:
-            console.print("[red]✗[/red] vaultctl is not known to apt (not installed from an APT repo).")
-            console.print("  Use --method github, or reinstall from source.")
-            raise typer.Exit(1)
-        if not apt_avail:
-            console.print(f"[green]✓[/green] Already up to date via apt (vaultctl {apt_installed}).")
-            return
-        if check:
-            console.print(f"[yellow]![/yellow] apt update available: {apt_installed} → {apt_candidate}")
-            return
-        _update_via_apt(apt_candidate)
-        return
-
-    if method == "github":
-        if not gh_target:
-            console.print("[red]✗[/red] Could not resolve a GitHub release (offline or no releases).")
-            console.print("  APT-repo installs: vaultctl self-update --method apt")
-            raise typer.Exit(1)
-        if not gh_avail:
-            console.print(f"[green]✓[/green] Already up to date (vaultctl {__version__}).")
-            return
-        if check:
-            console.print(f"[yellow]![/yellow] github update available: {__version__} → {gh_target}")
-            return
-        _update_via_github(gh_target)
-        return
-
-    # method == auto: prefer the native apt upgrade, else GitHub release.
-    if apt_avail:
-        if check:
-            console.print(f"[yellow]![/yellow] apt update available: {apt_installed} → {apt_candidate}")
-            return
-        _update_via_apt(apt_candidate)
-        return
-    if gh_avail:
-        if check:
-            console.print(f"[yellow]![/yellow] github update available: {__version__} → {gh_target}")
-            return
-        _update_via_github(gh_target)
-        return
-
-    console.print(f"[green]✓[/green] Already up to date (vaultctl {__version__}).")
+    checkout = _checkout_dir()
+    if checkout:
+        _update_via_git(checkout, check)
+    else:
+        _update_via_apt(check)
