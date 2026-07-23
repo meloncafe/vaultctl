@@ -10,7 +10,7 @@ include = ["src/vaultctl/templates/**/*.j2"]
 
 [tool.poetry.dependencies]
 python = ">=3.14,<3.15"
-typer = {extras = ["all"], version = "^0.26.8"}
+typer = {extras = ["all"], version = "^0.27.0"}
 rich = "^15.0.0"
 httpx = "^0.28.1"
 pydantic = "^2.13.4"
@@ -24,7 +24,7 @@ ruamel-yaml = "^0.19.1"
 pytest = "^9.1.1"
 pytest-asyncio = "^1.4.0"
 black = "^26.5.1"
-ruff = "^0.15.21"
+ruff = "^0.16.0"
 mypy = "^2.3.0"
 pyinstaller = "^6.21.0"
 
